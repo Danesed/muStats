@@ -40,10 +40,10 @@ beside it for Sparkle, and a cask in the `Danesed/homebrew-tap` repository.
 4. Follow the steps it prints:
 
    ```sh
-   git add appcast.xml && git commit -m "release: 1.0" && git push
-   git tag v1.0 && git push origin v1.0
-   gh release create v1.0 dist/muStats.dmg appcast.xml --title "μStats 1.0" \
-     --notes-file dist/notes-1.0.md
+   git add appcast.xml && git commit -m "release: 0.1.0" && git push
+   git tag v0.1.0 && git push origin v0.1.0
+   gh release create v0.1.0 dist/muStats.dmg appcast.xml --title "μStats 0.1.0" \
+     --notes-file dist/notes-0.1.0.md
    Scripts/cask.sh ../homebrew-tap   # then commit and push the tap
    ```
 

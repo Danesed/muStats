@@ -4,7 +4,7 @@ Each release has up to three groups: New, Improved and Fixed. `Scripts/appcast.p
 this file, so the update window and this page always say the same thing. Keep the
 headings exactly as they are below.
 
-## 1.0
+## 0.1.0
 
 ### New
 
@@ -17,3 +17,5 @@ headings exactly as they are below.
 - Desktop widgets, Rings and Overview, in small, medium and large, set up from the app.
 - Smart alerts for CPU, memory pressure, temperature, battery and disk.
 - Per-process energy, and a `mustats` command-line tool.
+- Update notice at the top of the panel, with Install and Skip, and a badge on the
+  Settings button while an update is waiting.
