@@ -27,6 +27,7 @@ AGENTS.md
 
 # Local working notes, not published
 docs/IDEAS.md
+docs/GUIDA-PUBBLICAZIONE.md
 
 # A one-off `npx vercel` leaves these behind. Nothing in this repo is a Node package.
 node_modules/
