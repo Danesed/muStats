@@ -1,9 +1,6 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.png">
-  <img src="docs/logo-light.png" alt="μStats logo" width="104">
-</picture>
+<img src="docs/icon.png" alt="μStats app icon" width="128">
 
 <h1>μStats</h1>
 

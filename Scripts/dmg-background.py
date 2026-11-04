@@ -51,8 +51,8 @@ def draw(scale):
     img = Image.new("RGB", (W * scale, H * scale), PAPER)
     d = ImageDraw.Draw(img)
 
-    centred(d, "Drag μStats into Applications", 56 * scale, font(20 * scale, index=1), INK, 1)
-    centred(d, "Then eject this disk image", 88 * scale, font(13 * scale), INK_3, 1)
+    centred(d, "Drag μStats into Applications", 56, font(20 * scale, index=1), INK, scale)
+    centred(d, "Then eject this disk image", 88, font(13 * scale), INK_3, scale)
 
     # The arrow spans the gap between the two icon slots. 128px icons are drawn
     # centred on those slots, so 82px of clearance keeps it off both of them.

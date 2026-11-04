@@ -10,7 +10,7 @@
 *.swiftdeps
 *.swiftdeps~
 
-# Output of `AirStat --render`.
+# Output of `muStats --render`.
 render/
 
 # Superseded by site/benchmark.html, which is the tracked copy.
