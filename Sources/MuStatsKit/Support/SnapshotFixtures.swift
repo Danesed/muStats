@@ -328,7 +328,7 @@ public enum SnapshotFixtures {
                 ProcessRow(pid: Int32(420 + index * 137), parentPID: 1, name: entry.0,
                            executablePath: "/Applications/\(entry.0).app",
                            cpuPercent: entry.1, memoryBytes: entry.2,
-                           threadCount: entry.3, userName: "byren",
+                           threadCount: entry.3, userName: "demo",
                            startTime: referenceDate.addingTimeInterval(-3_600),
                            // Roughly what Apple silicon charges per percent of a core.
                            energyImpact: entry.1 * 0.045)
@@ -342,8 +342,8 @@ public enum SnapshotFixtures {
         // Built by assignment rather than through the 17-argument initialiser: with
         // that many defaulted parameters the type checker exhausts its budget.
         var info = SystemInfoSnapshot()
-        info.hostName = "Byrens-Macbook-Pro.local"
-        info.computerName = "Byren's MacBook Pro"
+        info.hostName = "MacBook-Pro.local"
+        info.computerName = "MacBook Pro"
         info.modelIdentifier = "Mac15,6"
         info.modelName = "MacBook Pro (14-inch, Nov 2023)"
         info.chipName = "Apple M3 Pro"

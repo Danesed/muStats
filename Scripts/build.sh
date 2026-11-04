@@ -67,6 +67,10 @@ fi
 BUNDLE="$BIN_DIR/muStats_MuStatsUI.bundle"
 if [ -d "$BUNDLE" ]; then
   cp -R "$BUNDLE" "$APP/Contents/Resources/"
+  # SwiftPM names the bundle after the checkout folder ("<folder>.MuStatsUI.resources"),
+  # so a clone in a differently named folder would ship a different identifier.
+  /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.danesed.muStats.resources" \
+    "$APP/Contents/Resources/muStats_MuStatsUI.bundle/Contents/Info.plist"
 else
   echo "error: $BUNDLE is missing; the app would launch with no logo" >&2
   exit 1
