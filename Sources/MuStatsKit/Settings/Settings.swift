@@ -629,6 +629,104 @@ public enum PanelModule: String, Sendable, Codable, CaseIterable, Equatable, Has
 /// controls governing it was more configuration than the surface earns. What remains
 /// is the one piece of state the user still sets, and they set it by clicking a
 /// heading in the panel itself rather than by opening a window.
+/// When the status line at the top of the Now tab is shown.
+public enum PanelStatusLine: String, Sendable, Codable, CaseIterable, Equatable, Hashable {
+    /// Every time, "Everything looks normal" included.
+    case always
+    /// Only when a reading is at warning or critical.
+    case whenNotable
+    case never
+
+    public var label: String {
+        switch self {
+        case .always: return "Always"
+        case .whenNotable: return "Only when something needs attention"
+        case .never: return "Never"
+        }
+    }
+}
+
+/// A piece of the panel the user can hide. Panel-wide pieces have no module; the rest
+/// sit inside one module's detail.
+public enum PanelElement: String, Sendable, Codable, CaseIterable, Equatable, Hashable {
+    case moduleSparklines, moduleCaptions
+    case cpuCores, cpuProcesses, cpuLoad
+    case memoryComposition, memoryProcesses, memoryPressure, memoryTotals
+    case gpuMemory, gpuEngines
+    case networkAddresses, networkRouter, networkLatency, networkHardware, networkUsage, networkWiFi
+    case diskVolumes, diskProcesses, diskFolders, diskActivity
+    case batteryOutlook, batteryAdapter, batteryHealth, batteryProcesses, batteryDevices
+    case thermalReadings, thermalFans
+    case systemInfo, systemSleepBlockers
+
+    /// The module whose detail holds it, or nil for a panel-wide piece.
+    public var module: PanelModule? {
+        switch self {
+        case .moduleSparklines, .moduleCaptions: return nil
+        case .cpuCores, .cpuProcesses, .cpuLoad: return .cpu
+        case .memoryComposition, .memoryProcesses, .memoryPressure, .memoryTotals: return .memory
+        case .gpuMemory, .gpuEngines: return .gpu
+        case .networkAddresses, .networkRouter, .networkLatency, .networkHardware,
+             .networkUsage, .networkWiFi: return .network
+        case .diskVolumes, .diskProcesses, .diskFolders, .diskActivity: return .disk
+        case .batteryOutlook, .batteryAdapter, .batteryHealth, .batteryProcesses,
+             .batteryDevices: return .battery
+        case .thermalReadings, .thermalFans: return .thermal
+        case .systemInfo, .systemSleepBlockers: return .system
+        }
+    }
+
+    public var label: String {
+        switch self {
+        case .moduleSparklines: return "Mini graphs in the module rows"
+        case .moduleCaptions: return "Second figure in the module rows"
+        case .cpuCores: return "Load per core"
+        case .cpuProcesses, .memoryProcesses, .diskProcesses: return "Top processes"
+        case .cpuLoad: return "Load averages and threads"
+        case .memoryComposition: return "Composition"
+        case .memoryPressure: return "Pressure"
+        case .memoryTotals: return "Used, free, swap and total"
+        case .gpuMemory: return "Video memory"
+        case .gpuEngines: return "Renderer and tiler"
+        case .networkAddresses: return "Local and public IP"
+        case .networkRouter: return "Router and DNS"
+        case .networkLatency: return "Latency and diagnosis"
+        case .networkHardware: return "IPv6 and MAC address"
+        case .networkUsage: return "Data used today and in total"
+        case .networkWiFi: return "Wi-Fi signal"
+        case .diskVolumes: return "Volumes"
+        case .diskFolders: return "Folders that grew"
+        case .diskActivity: return "Read and write"
+        case .batteryOutlook: return "Time left and charge"
+        case .batteryAdapter: return "Power adapter"
+        case .batteryHealth: return "Health and cycles"
+        case .batteryProcesses: return "Apps using significant energy"
+        case .batteryDevices: return "Connected devices"
+        case .thermalReadings: return "Pressure and GPU temperature"
+        case .thermalFans: return "Fans"
+        case .systemInfo: return "Model, chip, macOS and display"
+        case .systemSleepBlockers: return "What keeps the Mac awake"
+        }
+    }
+
+    /// The pieces of `module`'s detail, in the order the detail draws them.
+    public static func inside(_ module: PanelModule) -> [PanelElement] {
+        allCases.filter { $0.module == module }
+    }
+
+    /// The piece that lists processes in `module`, whose list costs a sample of every
+    /// process; nil for a module that lists none.
+    public static func processes(in module: PanelModule) -> PanelElement? {
+        switch module {
+        case .cpu: return .cpuProcesses
+        case .memory: return .memoryProcesses
+        case .disk: return .diskProcesses
+        case .battery: return .batteryProcesses
+        default: return nil
+        }
+    }
+}
+
 public struct PanelSettings: Sendable, Codable, Equatable {
     /// Modules the user has collapsed to just their summary row.
     public var collapsedModules: Set<PanelModule>
@@ -652,6 +750,14 @@ public struct PanelSettings: Sendable, Codable, Equatable {
     public var developerToolsShown: Bool { showsDeveloperTools ?? DeveloperEnvironment.isPresent }
     /// The live chip tab: the processor drawn and lit by the readings. An extra.
     public var showsLiveChip: Bool
+    /// When the status line ("Everything looks normal") is shown.
+    public var statusLine: PanelStatusLine
+    /// Modules left out of the panel. Their sources are not sampled for it.
+    public var hiddenModules: Set<PanelModule>
+    /// Pieces of the panel the user switched off. Empty shows everything.
+    public var hiddenElements: Set<PanelElement>
+
+    public func shows(_ element: PanelElement) -> Bool { !hiddenElements.contains(element) }
 
     /// Fixed layout, previously the `width` setting. 380pt gives a detail grid three
     /// columns and a process name room beside its icon, and still leaves the panel
@@ -668,7 +774,10 @@ public struct PanelSettings: Sendable, Codable, Equatable {
                 moduleOrder: [PanelModule] = [],
                 showsToday: Bool = true,
                 showsDeveloperTools: Bool? = nil,
-                showsLiveChip: Bool = false) {
+                showsLiveChip: Bool = false,
+                statusLine: PanelStatusLine = .always,
+                hiddenModules: Set<PanelModule> = [],
+                hiddenElements: Set<PanelElement> = []) {
         self.collapsedModules = Self.accordion(collapsedModules)
         self.showsHistoryChart = showsHistoryChart
         self.defaultHistoryRange = defaultHistoryRange
@@ -677,6 +786,9 @@ public struct PanelSettings: Sendable, Codable, Equatable {
         self.showsToday = showsToday
         self.showsDeveloperTools = showsDeveloperTools
         self.showsLiveChip = showsLiveChip
+        self.statusLine = statusLine
+        self.hiddenModules = hiddenModules
+        self.hiddenElements = hiddenElements
     }
 
     /// The collapsed set after a click on `module`'s header.
@@ -717,28 +829,34 @@ public struct PanelSettings: Sendable, Codable, Equatable {
     /// one click from open.
     public static let defaultCollapsed: Set<PanelModule> = Set(PanelModule.allCases)
 
-    /// Every module, in the user's order. Modules the stored order does not name, a
-    /// new release's or all of them before the first drag, follow in declaration order.
-    public var visibleModules: [PanelModule] {
+    /// Every module, in the user's order, hidden ones included. Modules the stored
+    /// order does not name, a new release's or all of them before the first drag,
+    /// follow in declaration order.
+    public var orderedModules: [PanelModule] {
         var seen = Set<PanelModule>()
         let ordered = moduleOrder.filter { seen.insert($0).inserted }
         return ordered + PanelModule.allCases.filter { !seen.contains($0) }
     }
 
+    /// The modules the panel shows, in the user's order.
+    public var visibleModules: [PanelModule] {
+        orderedModules.filter { !hiddenModules.contains($0) }
+    }
+
     /// The order after `module` is dropped onto `target`: it takes the target's place
     /// and everything from there moves down one.
     public func moduleOrder(moving module: PanelModule, before target: PanelModule) -> [PanelModule] {
-        guard module != target else { return visibleModules }
-        var order = visibleModules.filter { $0 != module }
+        guard module != target else { return orderedModules }
+        var order = orderedModules.filter { $0 != module }
         let index = order.firstIndex(of: target) ?? order.endIndex
-        let movingDown = (visibleModules.firstIndex(of: module) ?? 0) < (visibleModules.firstIndex(of: target) ?? 0)
+        let movingDown = (orderedModules.firstIndex(of: module) ?? 0) < (orderedModules.firstIndex(of: target) ?? 0)
         order.insert(module, at: movingDown ? min(index + 1, order.endIndex) : index)
         return order
     }
 
     private enum CodingKeys: String, CodingKey {
         case collapsedModules, showsHistoryChart, defaultHistoryRange, showsAlertColors, moduleOrder, showsToday
-        case showsDeveloperTools, showsLiveChip
+        case showsDeveloperTools, showsLiveChip, statusLine, hiddenModules, hiddenElements
     }
 
     /// Decoded leniently, and settings files written before the panel pane was removed
@@ -754,6 +872,12 @@ public struct PanelSettings: Sendable, Codable, Equatable {
         showsToday = c.value(.showsToday, or: true)
         showsDeveloperTools = try? c.decodeIfPresent(Bool.self, forKey: .showsDeveloperTools)
         showsLiveChip = c.value(.showsLiveChip, or: false)
+        statusLine = c.value(.statusLine, or: .always)
+        hiddenModules = c.value(.hiddenModules, or: [])
+        // Read one by one, so a piece a newer build removed drops out instead of
+        // losing the whole set.
+        let rawElements = (try? c.decodeIfPresent([String].self, forKey: .hiddenElements)) ?? []
+        hiddenElements = Set(rawElements.compactMap(PanelElement.init(rawValue:)))
     }
 }
 

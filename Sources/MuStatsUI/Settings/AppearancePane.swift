@@ -101,41 +101,10 @@ struct AppearancePane: View {
                         Text(SettingsLabels.duration(duration)).tag(duration)
                     }
                 }
-                Toggle("Show history in the panel",
-                       isOn: settings.binding(\.panel.showsHistoryChart))
-                Picker("Default range", selection: settings.binding(\.panel.defaultHistoryRange)) {
-                    ForEach(HistoryRange.allCases, id: \.self) { range in
-                        Text(range.label(historyDuration: settings.settings.charts.historyDuration)).tag(range)
-                    }
-                }
-                .disabled(!settings.settings.panel.showsHistoryChart)
-                Toggle("Show today's events in the panel",
-                       isOn: settings.binding(\.panel.showsToday))
             } header: {
                 Text("Charts")
             } footer: {
-                SettingsFootnote("Choose whether history charts are shown when expanding panel modules, and which time range (5 min, 1h, 24h, 30d) opens by default.")
-            }
-
-            Section {
-                Toggle("Show the live chip in the panel",
-                       isOn: settings.binding(\.panel.showsLiveChip))
-            } header: {
-                Text("Extras")
-            } footer: {
-                SettingsFootnote("A third tab with a drawing of the chip whose cores light up with their real load. "
-                                 + "It reads nothing new and is drawn only while its tab is open.")
-            }
-
-            Section {
-                Toggle("Show developer tools in the panel", isOn: Binding(
-                    get: { settings.settings.panel.developerToolsShown },
-                    set: { value in settings.update { $0.panel.showsDeveloperTools = value } }))
-            } header: {
-                Text("Developer")
-            } footer: {
-                SettingsFootnote("Ports your apps are listening on and the containers Docker is running, in the network module. "
-                                 + "On by default when Xcode, Homebrew or Docker is installed. Read only while the module is open.")
+                SettingsFootnote("What the panel shows, history charts included, is in the Panel tab.")
             }
 
         }

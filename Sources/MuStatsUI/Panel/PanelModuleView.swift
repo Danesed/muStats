@@ -185,7 +185,8 @@ struct PanelModuleView: View {
     /// modules that keep no series.
     @ViewBuilder
     private var sparkline: some View {
-        if !isExpanded, let series = module.historySeries {
+        if !isExpanded, settings.settings.panel.shows(.moduleSparklines),
+           let series = module.historySeries {
             PanelSparkline(samples: engine.history[series.key], key: series.key,
                            domain: series.domain,
                            tint: Design.Palette.secondaryText)

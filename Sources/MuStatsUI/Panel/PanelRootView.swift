@@ -71,7 +71,7 @@ public struct PanelRootView: View {
             }
             PanelHeaderView(tab: tab, tabs: availableTabs, isStale: engine.isStale,
                             hasUpdate: updates?.pending != nil)
-            if shownTab == .now {
+            if shownTab == .now, Self.showsStatusLine(settings.settings.panel.statusLine, level: insight.level) {
                 PanelInsightRow(insight: insight, open: open)
                     .padding(.horizontal, Design.Space.s)
                     .padding(.top, Design.Space.s)
@@ -192,15 +192,29 @@ public struct PanelRootView: View {
     private var activeDetailSources: Set<CollectorID> {
         guard showsNow else { return [] }
         let expanded = modules.filter { !settings.settings.panel.collapsedModules.contains($0) }
-        return Self.detailSources(for: expanded)
+        return Self.detailSources(for: expanded, panel: settings.settings.panel)
     }
 
-    static func detailSources(for expanded: [PanelModule]) -> Set<CollectorID> {
+    /// What the open modules read. The process list is the costly one, so it is asked
+    /// for only by a module that still shows its processes.
+    static func detailSources(for expanded: [PanelModule],
+                              panel: PanelSettings = PanelSettings()) -> Set<CollectorID> {
         var sources = Set(expanded.map(\.requiredSource))
-        if expanded.contains(where: { [.cpu, .memory, .disk, .battery, .processes].contains($0) }) {
-            sources.insert(.processes)
+        let listsProcesses = expanded.contains { module in
+            if module == .processes { return true }
+            return PanelElement.processes(in: module).map(panel.shows) ?? false
         }
+        if listsProcesses { sources.insert(.processes) }
         return sources
+    }
+
+    /// Whether the status line is drawn, for the user's choice and the loudest level.
+    static func showsStatusLine(_ mode: PanelStatusLine, level: PanelAlertLevel) -> Bool {
+        switch mode {
+        case .always: return true
+        case .whenNotable: return level != .none
+        case .never: return false
+        }
     }
 
     private func updateDetails() {
@@ -264,6 +278,8 @@ public struct PanelRootView: View {
 
     /// One width for every row's qualifier column, from the captions on screen now.
     private var captionColumnWidth: CGFloat {
+        // Zero is what the rows read as "no caption column".
+        guard settings.settings.panel.shows(.moduleCaptions) else { return 0 }
         let formatter = MetricFormatter(settings: settings.settings.general)
         return PanelSummary.captionColumnWidth(for: modules.map {
             PanelSummary.make(for: $0, engine: engine, formatter: formatter)

@@ -24,6 +24,11 @@ extension PanelModuleView {
         }
     }
 
+    /// Whether the user left `element` on in Settings > Panel.
+    func shows(_ element: PanelElement) -> Bool {
+        settings.settings.panel.shows(element)
+    }
+
     /// The history chart under a module's rows, when the module has a series and the
     /// user has not switched the charts off.
     ///
@@ -77,24 +82,30 @@ extension PanelModuleView {
     private var cpuDetail: some View {
         section(engine.cpu) { cpu in
             VStack(alignment: .leading, spacing: Design.Space.xs) {
-                coreClusters(cpu)
-                if let busy = PanelHotCore.busy(in: cpu) {
-                    Text("A core is at \(formatter.percent(busy)) now")
-                        .font(Design.Text.caption)
-                        .foregroundStyle(Design.Palette.secondaryText)
+                if shows(.cpuCores) {
+                    coreClusters(cpu)
+                    if let busy = PanelHotCore.busy(in: cpu) {
+                        Text("A core is at \(formatter.percent(busy)) now")
+                            .font(Design.Text.caption)
+                            .foregroundStyle(Design.Palette.secondaryText)
+                    }
                 }
-                // No share: a process at 412% is "4% of the machine", which reads as
-                // a contradiction beside the number it qualifies.
-                culprits("Using the most CPU", showsShare: false, by: { $0.cpuPercent }) {
-                    formatter.unclampedPercent($0.cpuPercent)
+                if shows(.cpuProcesses) {
+                    // No share: a process at 412% is "4% of the machine", which reads as
+                    // a contradiction beside the number it qualifies.
+                    culprits("Using the most CPU", showsShare: false, by: { $0.cpuPercent }) {
+                        formatter.unclampedPercent($0.cpuPercent)
+                    }
                 }
-                PanelDetailGrid(entries: [
-                    // The 1-minute load is already in the header caption; the grid
-                    // adds the two slower averages instead of repeating it.
-                    PanelDetailEntry("Load 5m", formatter.fixed(cpu.loadAverage.five, decimals: 1)),
-                    PanelDetailEntry("Load 15m", formatter.fixed(cpu.loadAverage.fifteen, decimals: 1)),
-                    PanelDetailEntry("Threads", cpu.threadCount.map(formatter.count) ?? MetricFormatter.unavailable),
-                ])
+                if shows(.cpuLoad) {
+                    PanelDetailGrid(entries: [
+                        // The 1-minute load is already in the header caption; the grid
+                        // adds the two slower averages instead of repeating it.
+                        PanelDetailEntry("Load 5m", formatter.fixed(cpu.loadAverage.five, decimals: 1)),
+                        PanelDetailEntry("Load 15m", formatter.fixed(cpu.loadAverage.fifteen, decimals: 1)),
+                        PanelDetailEntry("Threads", cpu.threadCount.map(formatter.count) ?? MetricFormatter.unavailable),
+                    ])
+                }
                 history()
             }
         }
@@ -146,24 +157,32 @@ extension PanelModuleView {
         section(engine.memory) { memory in
             let segments = CompositionSegment.memory(memory)
             VStack(alignment: .leading, spacing: Design.Space.xs) {
-                StackedCompositionBar(segments, format: .memoryBytes,
-                                      title: "Memory composition",
-                                      barHeight: Design.Space.m, showsLegend: false)
-                PanelSegmentLegend(segments: segments, format: .memoryBytes)
-                culprits("Using the most memory", total: Double(memory.totalBytes),
-                         by: { Double($0.memoryBytes) }) {
-                    formatter.memory($0.memoryBytes)
+                if shows(.memoryComposition) {
+                    StackedCompositionBar(segments, format: .memoryBytes,
+                                          title: "Memory composition",
+                                          barHeight: Design.Space.m, showsLegend: false)
+                    PanelSegmentLegend(segments: segments, format: .memoryBytes)
                 }
-                PanelBarRow(label: "Pressure",
-                            value: "\(memory.memoryPressure.label) (\(formatter.percent(memory.pressureFraction)))",
-                            fraction: memory.pressureFraction,
-                            tint: tint)
-                PanelDetailGrid(entries: [
-                    PanelDetailEntry("Used", formatter.memory(memory.usedBytes)),
-                    PanelDetailEntry("Free", formatter.memory(memory.freeBytes)),
-                    PanelDetailEntry("Swap", formatter.memory(memory.swapUsedBytes)),
-                    PanelDetailEntry("Total", formatter.memory(memory.totalBytes)),
-                ])
+                if shows(.memoryProcesses) {
+                    culprits("Using the most memory", total: Double(memory.totalBytes),
+                             by: { Double($0.memoryBytes) }) {
+                        formatter.memory($0.memoryBytes)
+                    }
+                }
+                if shows(.memoryPressure) {
+                    PanelBarRow(label: "Pressure",
+                                value: "\(memory.memoryPressure.label) (\(formatter.percent(memory.pressureFraction)))",
+                                fraction: memory.pressureFraction,
+                                tint: tint)
+                }
+                if shows(.memoryTotals) {
+                    PanelDetailGrid(entries: [
+                        PanelDetailEntry("Used", formatter.memory(memory.usedBytes)),
+                        PanelDetailEntry("Free", formatter.memory(memory.freeBytes)),
+                        PanelDetailEntry("Swap", formatter.memory(memory.swapUsedBytes)),
+                        PanelDetailEntry("Total", formatter.memory(memory.totalBytes)),
+                    ])
+                }
                 history()
             }
         }
@@ -240,14 +259,15 @@ extension PanelModuleView {
         section(engine.gpu) { gpu in
             if let device = gpu.primary {
                 VStack(alignment: .leading, spacing: Design.Space.xs) {
-                    if let used = device.vramUsedBytes, let total = device.vramTotalBytes, total > 0 {
+                    if shows(.gpuMemory), let used = device.vramUsedBytes,
+                       let total = device.vramTotalBytes, total > 0 {
                         PanelBarRow(label: "VRAM",
                                     value: "\(formatter.memory(used)) of \(formatter.memory(total))",
                                     fraction: Double(used) / Double(total),
                                     tint: tint)
                     }
                     let entries = gpuEntries(device)
-                    if !entries.isEmpty { PanelDetailGrid(entries: entries) }
+                    if shows(.gpuEngines), !entries.isEmpty { PanelDetailGrid(entries: entries) }
                     history(available: device.utilization != nil)
                 }
             } else {
@@ -281,91 +301,133 @@ extension PanelModuleView {
                 if network.wifi == nil, network.connectionType != .wifi {
                     ReadoutRow("Connection", String(localized: String.LocalizationValue(network.connectionType.label)))
                 }
-                if let ip = network.localIPv4 {
-                    CopyableReadoutRow("Local IP", ip)
-                } else if let name = network.primaryInterfaceName {
-                    ReadoutRow("Interface", name)
+                if shows(.networkAddresses) {
+                    networkAddresses(network)
                 }
-                if let publicIP = publicIPValue(network.publicIP) {
-                    // Full width rather than a grid cell, the way the battery's adapter
-                    // row is: a grid cell is half of 340pt and truncated "203.0.113…"
-                    // after the label, and an IPv6 answer is three times longer again.
-                    CopyableReadoutRow("Public IP", publicIP)
+                if shows(.networkRouter) {
+                    networkRouter(network)
                 }
-                if let router = network.routerIPv4 {
-                    CopyableReadoutRow("Router", router,
-                                       detail: network.routerPing.value?.averageRTT.map { formatter.milliseconds($0) })
+                if shows(.networkLatency) {
+                    networkLatency(network)
                 }
-                if !network.dnsServers.isEmpty {
-                    ReadoutRow("DNS", network.dnsServers.joined(separator: " · "))
+                if shows(.networkHardware) {
+                    networkHardware(network)
                 }
-                if let latency = latencyValue(network.latency, loss: network.packetLoss) {
-                    HStack(spacing: Design.Space.rowGap) {
-                        Text("Latency")
-                            .font(Design.Text.label)
-                            .foregroundStyle(Design.Palette.secondaryText)
-                            .lineLimit(1)
-                        Spacer(minLength: Design.Space.m)
-                        Text(latency)
-                            .font(Design.Text.value)
-                            .foregroundStyle(Design.Palette.primaryText)
-                            .lineLimit(1)
-                        Button {
-                            engine.triggerNetworkProbe()
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                                .font(Design.Text.micro)
-                                .foregroundStyle(Design.Palette.secondaryText)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Retest network")
-                    }
+                if shows(.networkUsage) {
+                    networkUsage
                 }
-                if let diagnosis = NetworkDiagnosis.make(router: network.routerPing,
-                                                         internetLatency: network.latency,
-                                                         internetLoss: network.packetLoss) {
-                    diagnosisRow(diagnosis, wifi: network.connectionType == .wifi)
-                }
-                if let primary = network.interfaces.first(where: { $0.name == network.primaryInterfaceName }) {
-                    if let ip6 = primary.ipv6 {
-                        CopyableReadoutRow("Local IPv6", ip6)
-                    }
-                    if let mac = primary.macAddress {
-                        let private_ = primary.factoryMacAddress != nil
-                            && primary.factoryMacAddress != mac
-                        CopyableReadoutRow("MAC", private_ ? "\(mac) · private" : mac)
-                        if private_, let factory = primary.factoryMacAddress {
-                            CopyableReadoutRow("Factory MAC", factory)
-                        }
-                    }
-                }
-                if engine.networkUsage.today.combined() > 0 {
-                    ReadoutRow("Today", usageText(engine.networkUsage.today))
-                }
-                if engine.networkUsage.total.combined() > 0 {
-                    ReadoutRow("Total", usageText(engine.networkUsage.total))
-                }
-                if network.connectionType == .wifi, network.wifi?.signalQuality == nil {
-                    // Wi-Fi details are read only while this detail is open: the
-                    // signal row waits in place for the first reading.
-                    PanelBarRow(label: "Signal", value: "…", fraction: 0, tint: tint)
-                }
-                if let wifi = network.wifi, let quality = wifi.signalQuality {
-                    if let ssid = wifi.ssid, PanelWiFiLabel.needsOwnLine(ssid) {
-                        Text(verbatim: ssid)
-                            .font(Design.Text.label)
-                            .foregroundStyle(Design.Palette.secondaryText)
-                            .fixedSize(horizontal: false, vertical: true)
-                        PanelBarRow(label: "Signal", value: signalValue(wifi), fraction: quality, tint: tint)
-                    } else {
-                        PanelBarRow(label: wifi.ssid ?? "Signal", value: signalValue(wifi),
-                                    fraction: quality, tint: tint, labelIsVerbatim: wifi.ssid != nil)
-                    }
+                if shows(.networkWiFi) {
+                    networkWiFi(network)
                 }
                 if settings.settings.panel.developerToolsShown {
                     PanelListeningPorts()
                 }
                 history()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func networkAddresses(_ network: NetworkSnapshot) -> some View {
+        if let ip = network.localIPv4 {
+            CopyableReadoutRow("Local IP", ip)
+        } else if let name = network.primaryInterfaceName {
+            ReadoutRow("Interface", name)
+        }
+        if let publicIP = publicIPValue(network.publicIP) {
+            // Full width rather than a grid cell, the way the battery's adapter
+            // row is: a grid cell is half of 340pt and truncated "203.0.113…"
+            // after the label, and an IPv6 answer is three times longer again.
+            CopyableReadoutRow("Public IP", publicIP)
+        }
+    }
+
+    @ViewBuilder
+    private func networkRouter(_ network: NetworkSnapshot) -> some View {
+        if let router = network.routerIPv4 {
+            CopyableReadoutRow("Router", router,
+                               detail: network.routerPing.value?.averageRTT.map { formatter.milliseconds($0) })
+        }
+        if !network.dnsServers.isEmpty {
+            ReadoutRow("DNS", network.dnsServers.joined(separator: " · "))
+        }
+    }
+
+    @ViewBuilder
+    private func networkLatency(_ network: NetworkSnapshot) -> some View {
+        if let latency = latencyValue(network.latency, loss: network.packetLoss) {
+            HStack(spacing: Design.Space.rowGap) {
+                Text("Latency")
+                    .font(Design.Text.label)
+                    .foregroundStyle(Design.Palette.secondaryText)
+                    .lineLimit(1)
+                Spacer(minLength: Design.Space.m)
+                Text(latency)
+                    .font(Design.Text.value)
+                    .foregroundStyle(Design.Palette.primaryText)
+                    .lineLimit(1)
+                Button {
+                    engine.triggerNetworkProbe()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(Design.Text.micro)
+                        .foregroundStyle(Design.Palette.secondaryText)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Retest network")
+            }
+        }
+        if let diagnosis = NetworkDiagnosis.make(router: network.routerPing,
+                                                 internetLatency: network.latency,
+                                                 internetLoss: network.packetLoss) {
+            diagnosisRow(diagnosis, wifi: network.connectionType == .wifi)
+        }
+    }
+
+    @ViewBuilder
+    private func networkHardware(_ network: NetworkSnapshot) -> some View {
+        if let primary = network.interfaces.first(where: { $0.name == network.primaryInterfaceName }) {
+            if let ip6 = primary.ipv6 {
+                CopyableReadoutRow("Local IPv6", ip6)
+            }
+            if let mac = primary.macAddress {
+                let private_ = primary.factoryMacAddress != nil
+                    && primary.factoryMacAddress != mac
+                CopyableReadoutRow("MAC", private_ ? "\(mac) · private" : mac)
+                if private_, let factory = primary.factoryMacAddress {
+                    CopyableReadoutRow("Factory MAC", factory)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var networkUsage: some View {
+        if engine.networkUsage.today.combined() > 0 {
+            ReadoutRow("Today", usageText(engine.networkUsage.today))
+        }
+        if engine.networkUsage.total.combined() > 0 {
+            ReadoutRow("Total", usageText(engine.networkUsage.total))
+        }
+    }
+
+    @ViewBuilder
+    private func networkWiFi(_ network: NetworkSnapshot) -> some View {
+        if network.connectionType == .wifi, network.wifi?.signalQuality == nil {
+            // Wi-Fi details are read only while this detail is open: the
+            // signal row waits in place for the first reading.
+            PanelBarRow(label: "Signal", value: "…", fraction: 0, tint: tint)
+        }
+        if let wifi = network.wifi, let quality = wifi.signalQuality {
+            if let ssid = wifi.ssid, PanelWiFiLabel.needsOwnLine(ssid) {
+                Text(verbatim: ssid)
+                    .font(Design.Text.label)
+                    .foregroundStyle(Design.Palette.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                PanelBarRow(label: "Signal", value: signalValue(wifi), fraction: quality, tint: tint)
+            } else {
+                PanelBarRow(label: wifi.ssid ?? "Signal", value: signalValue(wifi),
+                            fraction: quality, tint: tint, labelIsVerbatim: wifi.ssid != nil)
             }
         }
     }
@@ -468,22 +530,30 @@ extension PanelModuleView {
     private var diskDetail: some View {
         section(engine.disk) { disk in
             VStack(alignment: .leading, spacing: Design.Space.xs) {
-                ForEach(disk.volumes) { volume in
-                    volumeRow(volume)
+                if shows(.diskVolumes) {
+                    ForEach(disk.volumes) { volume in
+                        volumeRow(volume)
+                    }
                 }
-                culprits("Reading and writing the most", reservesRows: false, by: diskTotal) {
-                    formatter.diskRate(diskTotal($0))
+                if shows(.diskProcesses) {
+                    culprits("Reading and writing the most", reservesRows: false, by: diskTotal) {
+                        formatter.diskRate(diskTotal($0))
+                    }
                 }
-                PanelStorageInsights(engine: engine,
-                                     directory: settings.settingsFileURL.deletingLastPathComponent())
-                PanelDetailGrid(entries: [
-                    PanelDetailEntry("Read", disk.ioAvailable ? formatter.diskRate(disk.readBytesPerSecond) : MetricFormatter.unavailable),
-                    PanelDetailEntry("Write", disk.ioAvailable ? formatter.diskRate(disk.writeBytesPerSecond) : MetricFormatter.unavailable),
-                    // Counters since boot: how much the storage has ever moved, the
-                    // closest thing to a wear reading this OS will hand out.
-                    PanelDetailEntry("Lifetime read", disk.ioAvailable ? formatter.storage(disk.totalReadBytes) : MetricFormatter.unavailable),
-                    PanelDetailEntry("Lifetime written", disk.ioAvailable ? formatter.storage(disk.totalWriteBytes) : MetricFormatter.unavailable),
-                ])
+                if shows(.diskFolders) {
+                    PanelStorageInsights(engine: engine,
+                                         directory: settings.settingsFileURL.deletingLastPathComponent())
+                }
+                if shows(.diskActivity) {
+                    PanelDetailGrid(entries: [
+                        PanelDetailEntry("Read", disk.ioAvailable ? formatter.diskRate(disk.readBytesPerSecond) : MetricFormatter.unavailable),
+                        PanelDetailEntry("Write", disk.ioAvailable ? formatter.diskRate(disk.writeBytesPerSecond) : MetricFormatter.unavailable),
+                        // Counters since boot: how much the storage has ever moved, the
+                        // closest thing to a wear reading this OS will hand out.
+                        PanelDetailEntry("Lifetime read", disk.ioAvailable ? formatter.storage(disk.totalReadBytes) : MetricFormatter.unavailable),
+                        PanelDetailEntry("Lifetime written", disk.ioAvailable ? formatter.storage(disk.totalWriteBytes) : MetricFormatter.unavailable),
+                    ])
+                }
                 history()
             }
         }
@@ -531,25 +601,27 @@ extension PanelModuleView {
     private var batteryDetail: some View {
         section(engine.power) { power in
             VStack(alignment: .leading, spacing: Design.Space.xs) {
-                if power.hasBattery, let percentage = power.percentage {
+                if shows(.batteryOutlook), power.hasBattery, let percentage = power.percentage {
                     batteryOutlook(power, percentage: percentage)
                 }
-                if let adapter = adapterSummary(power) {
+                if shows(.batteryAdapter), let adapter = adapterSummary(power) {
                     ReadoutRow("Adapter", adapter)
                 }
                 let entries = powerEntries(power)
-                if !entries.isEmpty { PanelDetailGrid(entries: entries) }
-                culprits("Using significant energy", reservesRows: false,
-                         by: { ($0.energyImpact ?? 0) >= Self.significantWatts ? $0.energyImpact ?? 0 : 0 }) {
-                    formatter.watts($0.energyImpact, decimals: 2)
+                if shows(.batteryHealth), !entries.isEmpty { PanelDetailGrid(entries: entries) }
+                if shows(.batteryProcesses) {
+                    culprits("Using significant energy", reservesRows: false,
+                             by: { ($0.energyImpact ?? 0) >= Self.significantWatts ? $0.energyImpact ?? 0 : 0 }) {
+                        formatter.watts($0.energyImpact, decimals: 2)
+                    }
+                    if let saving = batterySaving(power) {
+                        Text(saving)
+                            .font(Design.Text.caption)
+                            .foregroundStyle(Design.Palette.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
-                if let saving = batterySaving(power) {
-                    Text(saving)
-                        .font(Design.Text.caption)
-                        .foregroundStyle(Design.Palette.secondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if !power.accessories.isEmpty {
+                if shows(.batteryDevices), !power.accessories.isEmpty {
                     VStack(alignment: .leading, spacing: Design.Space.xs) {
                         PanelSectionLabel("Devices")
                         ForEach(power.accessories) { accessory in
@@ -696,14 +768,18 @@ extension PanelModuleView {
     private var thermalDetail: some View {
         section(engine.thermal) { thermal in
             VStack(alignment: .leading, spacing: Design.Space.xs) {
-                PanelDetailGrid(entries: thermalEntries(thermal))
+                if shows(.thermalReadings) {
+                    PanelDetailGrid(entries: thermalEntries(thermal))
+                }
                 // Fans are read out rather than gauged: a stopped fan is a normal
                 // state on a Mac that is not working hard, and an empty dial next
                 // to a healthy machine reads as a broken sensor. "0 RPM" cannot be
                 // misread. Full-width rows: "1,765 RPM · 22%" does not fit a half
                 // grid cell next to the fan's name without truncating.
-                ForEach(thermal.fans) { fan in
-                    ReadoutRow(fan.name, fanText(fan))
+                if shows(.thermalFans) {
+                    ForEach(thermal.fans) { fan in
+                        ReadoutRow(fan.name, fanText(fan))
+                    }
                 }
                 if let reason = thermal.sensorsUnavailableReason {
                     UnavailableNote(.unsupported(reason))
@@ -921,13 +997,17 @@ extension PanelModuleView {
     private var systemDetail: some View {
         section(engine.system) { system in
             VStack(alignment: .leading, spacing: Design.Space.xxs) {
-                ReadoutRow("Model", system.modelName)
-                ReadoutRow("Chip", system.chipName)
-                ReadoutRow(system.osName, system.osVersion)
-                if let display = system.displaySummary {
-                    ReadoutRow("Display", display)
+                if shows(.systemInfo) {
+                    ReadoutRow("Model", system.modelName)
+                    ReadoutRow("Chip", system.chipName)
+                    ReadoutRow(system.osName, system.osVersion)
+                    if let display = system.displaySummary {
+                        ReadoutRow("Display", display)
+                    }
                 }
-                PanelSleepBlockers()
+                if shows(.systemSleepBlockers) {
+                    PanelSleepBlockers()
+                }
             }
         }
     }

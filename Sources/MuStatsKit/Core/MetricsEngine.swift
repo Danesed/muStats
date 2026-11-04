@@ -177,7 +177,8 @@ public final class MetricsEngine {
     private func updatePanelDemand() {
         core?.setPanelDetails(isPanelVisible ? panelDetails : [],
                               processCount: isPanelVisible && panelProcessCount)
-        core?.setLatencyProbeEnabled(isPanelVisible && activity.isSampling && panelDetails.contains(.network))
+        core?.setLatencyProbeEnabled(isPanelVisible && activity.isSampling && panelDetails.contains(.network)
+                                     && settingsStore.settings.panel.shows(.networkLatency))
     }
 
     /// Reads the process list on the next two samples even with the panel closed, for
@@ -392,6 +393,8 @@ public final class MetricsEngine {
         // Turning the pause off has to resume sampling now, not at whatever UI
         // transition happens to call `updateActivity` next.
         updateActivity()
+        // Hiding the latency row stops its probe at once, not at the next panel change.
+        updatePanelDemand()
 
         let capacity = s.historyCapacity
         if history.capacity != capacity { history.resize(to: capacity) }

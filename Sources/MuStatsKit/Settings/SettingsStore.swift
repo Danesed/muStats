@@ -88,6 +88,15 @@ public final class SettingsStore {
             switch section {
             case .general: s.general = GeneralSettings()
             case .menuBar: s.menuBar = MenuBarSettings()
+            case .panel:
+                // What the panel shows goes back to the default; the order and the
+                // open module are where the user left them, and the alert colours
+                // belong to Appearance.
+                var panel = PanelSettings()
+                panel.moduleOrder = s.panel.moduleOrder
+                panel.collapsedModules = s.panel.collapsedModules
+                panel.showsAlertColors = s.panel.showsAlertColors
+                s.panel = panel
             case .charts: s.charts = ChartSettings()
             case .notifications: s.notifications = NotificationSettings()
             case .shortcuts: s.shortcuts = ShortcutSettings()
@@ -98,7 +107,7 @@ public final class SettingsStore {
     }
 
     public enum SettingsSection: String, Sendable, CaseIterable {
-        case general, menuBar, charts, notifications, shortcuts, theme, widgets
+        case general, menuBar, panel, charts, notifications, shortcuts, theme, widgets
 
         /// What this subtree is called in the window. Here rather than in the UI layer
         /// because the reset menu lists sections, not panes — one pane now edits more
@@ -107,6 +116,7 @@ public final class SettingsStore {
             switch self {
             case .general: return "General"
             case .menuBar: return "Menu Bar"
+            case .panel: return "Panel"
             case .charts: return "Charts"
             case .notifications: return "Notifications"
             case .shortcuts: return "Shortcuts"

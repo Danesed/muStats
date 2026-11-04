@@ -16,7 +16,7 @@ public enum SettingsTab: String, CaseIterable, Identifiable, Sendable {
     // Order is the source list's order, and it is grouped: what the app is, then the
     // things it does, then how it looks and how you reach it, then about.
     case general
-    case menuBar, notifications, widgets
+    case menuBar, panel, notifications, widgets
     case appearance, shortcuts
     case about
 
@@ -26,6 +26,7 @@ public enum SettingsTab: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .general: return "General"
         case .menuBar: return "Menu Bar"
+        case .panel: return "Panel"
         case .appearance: return "Appearance"
         case .notifications: return "Notifications"
         case .widgets: return "Widgets"
@@ -49,6 +50,7 @@ public enum SettingsTab: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .general: return "gearshape"
         case .menuBar: return "menubar.rectangle"
+        case .panel: return "list.bullet.rectangle"
         case .appearance: return "paintpalette"
         case .notifications: return "bell.badge"
         case .widgets: return "square.grid.2x2"
@@ -63,6 +65,7 @@ public enum SettingsTab: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .general: return [.general]
         case .menuBar: return [.menuBar]
+        case .panel: return [.panel]
         case .appearance: return [.theme, .charts]
         case .notifications: return [.notifications]
         case .widgets: return [.widgets]

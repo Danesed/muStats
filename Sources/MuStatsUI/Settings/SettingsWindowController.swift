@@ -269,6 +269,7 @@ struct SettingsRootView: View {
         case .appearance: AppearancePane(settings: settings)
         case .notifications: NotificationsPane(settings: settings, engine: engine,
                                                authority: authority)
+        case .panel: PanelPane(settings: settings)
         case .widgets: WidgetsPane(settings: settings)
         case .shortcuts: ShortcutsPane(settings: settings)
         case .about: AboutPane(settings: settings, engine: engine, updater: updater)
