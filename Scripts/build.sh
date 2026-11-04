@@ -69,8 +69,14 @@ if [ -d "$BUNDLE" ]; then
   cp -R "$BUNDLE" "$APP/Contents/Resources/"
   # SwiftPM names the bundle after the checkout folder ("<folder>.MuStatsUI.resources"),
   # so a clone in a differently named folder would ship a different identifier.
-  /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.danesed.muStats.resources" \
-    "$APP/Contents/Resources/muStats_MuStatsUI.bundle/Contents/Info.plist"
+  # A plain `swift build` lays the bundle out flat, with no Info.plist and so no
+  # identifier to fix.
+  for PLIST in "$APP/Contents/Resources/muStats_MuStatsUI.bundle/Contents/Info.plist" \
+               "$APP/Contents/Resources/muStats_MuStatsUI.bundle/Info.plist"; do
+    if [ -f "$PLIST" ]; then
+      /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.danesed.muStats.resources" "$PLIST"
+    fi
+  done
 else
   echo "error: $BUNDLE is missing; the app would launch with no logo" >&2
   exit 1
