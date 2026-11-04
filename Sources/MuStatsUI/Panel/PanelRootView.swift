@@ -59,15 +59,18 @@ public struct PanelRootView: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let pending = updates?.pending {
-                PanelUpdateRow(update: pending) { [updates] in
+                PanelUpdateRow(update: pending, install: { [updates] in
                     // Sparkle's window is a window, and the panel closes when it loses
                     // key, so it would take the update with it on the way out.
                     actions.dismiss()
                     updates?.installPending()
-                }
+                }, skip: { [updates] in
+                    updates?.skipPending()
+                })
                 PanelSeparator()
             }
-            PanelHeaderView(tab: tab, tabs: availableTabs, isStale: engine.isStale)
+            PanelHeaderView(tab: tab, tabs: availableTabs, isStale: engine.isStale,
+                            hasUpdate: updates?.pending != nil)
             if shownTab == .now {
                 PanelInsightRow(insight: insight, open: open)
                     .padding(.horizontal, Design.Space.s)
@@ -397,35 +400,60 @@ struct PanelSeparator: View {
 struct PanelUpdateRow: View {
     let update: PendingUpdate
     let install: @MainActor () -> Void
+    let skip: @MainActor () -> Void
 
     /// A staged update wants a relaunch and nothing else, so the row says so instead
     /// of promising an install it has already done.
-    private var headline: String {
+    private var headline: LocalizedStringKey {
         update.isReadyToInstall ? "μStats \(update.version) is ready" : "μStats \(update.version) is available"
     }
 
     private var action: String { update.isReadyToInstall ? "Restart" : "Install" }
 
+    var body: some View {
+        HStack(spacing: Design.Space.s) {
+            Image(systemName: "arrow.down.circle.fill")
+                .font(Design.Text.label)
+                .foregroundStyle(Design.Palette.accent)
+            Text(headline)
+                .font(Design.Text.label)
+                .foregroundStyle(Design.Palette.primaryText)
+                .lineLimit(1)
+            Spacer(minLength: Design.Space.m)
+            PanelUpdateButton(title: "Skip", color: Design.Palette.secondaryText, action: skip)
+                .help("Skip this version. A newer one will still be offered.")
+                .accessibilityHint("Hides this version until a newer one is released")
+            PanelUpdateButton(title: action, color: Design.Palette.accent, action: install)
+                .accessibilityHint(update.isReadyToInstall ? "Relaunches μStats into the new version"
+                                                           : "Opens the updater to install it")
+        }
+        .padding(.horizontal, Design.Space.panelInset)
+        .padding(.vertical, Design.Space.m)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(headline)
+    }
+}
+
+/// A caption-sized text button for the update row, highlighted under the pointer.
+private struct PanelUpdateButton: View {
+    let title: String
+    let color: Color
+    let action: @MainActor () -> Void
+
     @State private var isHovering = false
 
     var body: some View {
-        Button(action: install) {
-            HStack(spacing: Design.Space.s) {
-                Image(systemName: "arrow.down.circle.fill")
-                    .font(Design.Text.label)
-                    .foregroundStyle(Design.Palette.accent)
-                Text(headline)
-                    .font(Design.Text.label)
-                    .foregroundStyle(Design.Palette.primaryText)
-                Spacer(minLength: Design.Space.m)
-                Text(action)
-                    .font(Design.Text.caption)
-                    .foregroundStyle(Design.Palette.accent)
-            }
-            .padding(.horizontal, Design.Space.panelInset)
-            .padding(.vertical, Design.Space.m)
-            .background(isHovering ? Design.Palette.track : .clear)
-            .contentShape(Rectangle())
+        Button(action: action) {
+            Text(localizing: title)
+                .font(Design.Text.caption)
+                .foregroundStyle(color)
+                .padding(.horizontal, Design.Space.s)
+                .padding(.vertical, Design.Space.xs)
+                .background(
+                    RoundedRectangle(cornerRadius: Design.Radius.control, style: .continuous)
+                        .fill(isHovering ? Design.Palette.track : .clear)
+                )
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering in
@@ -433,9 +461,6 @@ struct PanelUpdateRow: View {
                 isHovering = hovering
             }
         }
-        .accessibilityLabel(headline)
-        .accessibilityHint(update.isReadyToInstall ? "Relaunches μStats into the new version"
-                                                   : "Opens the updater to install it")
     }
 }
 
@@ -448,6 +473,9 @@ struct PanelHeaderView: View {
     /// The readings stopped arriving: the Mac just woke, or sampling is stuck. Said
     /// here rather than by greying the numbers, which reads as disabled.
     var isStale = false
+    /// A release is waiting: the gear carries a small badge until it is installed or
+    /// skipped.
+    var hasUpdate = false
 
     @Environment(\.panelActions) private var actions
     @State private var isHovering = false
@@ -478,16 +506,33 @@ struct PanelHeaderView: View {
                         .font(.system(size: 13, weight: .regular))
                         .foregroundStyle(isHovering ? Design.Palette.primaryText : Design.Palette.secondaryText)
                         .frame(width: 26, height: 22)
+                        // The gear is cut away under the badge, so its teeth never show
+                        // through the translucent panel behind the dot.
+                        .mask {
+                            ZStack(alignment: .topTrailing) {
+                                Rectangle()
+                                if hasUpdate {
+                                    Circle()
+                                        .frame(width: 14, height: 14)
+                                        .offset(x: -1.5, y: -2.5)
+                                        .blendMode(.destinationOut)
+                                }
+                            }
+                            .compositingGroup()
+                        }
                         .background(
                             RoundedRectangle(cornerRadius: Design.Radius.control, style: .continuous)
                                 .fill(isHovering ? Design.Palette.track : .clear)
                         )
+                        .overlay(alignment: .topTrailing) {
+                            if hasUpdate { UpdateBadge().offset(x: -3, y: -1) }
+                        }
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(",", modifiers: .command)
-                .help("Settings")
-                .accessibilityLabel("Settings")
+                .help(hasUpdate ? "Settings. An update is available." : "Settings")
+                .accessibilityLabel(hasUpdate ? "Settings, update available" : "Settings")
                 .onHover { hovering in
                     withAnimation(Design.Motion.respectingAccessibility(Design.Motion.hover)) {
                         isHovering = hovering
@@ -506,3 +551,14 @@ struct PanelHeaderView: View {
     }
 }
 
+/// The blue dot with a white up arrow that marks the gear while an update is waiting.
+struct UpdateBadge: View {
+    var body: some View {
+        Image(systemName: "arrow.up")
+            .font(.system(size: 6.5, weight: .heavy))
+            .foregroundStyle(.white)
+            .frame(width: 11, height: 11)
+            .background(Circle().fill(Color.blue))
+            .accessibilityHidden(true)
+    }
+}

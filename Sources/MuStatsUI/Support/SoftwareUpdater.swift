@@ -118,8 +118,9 @@ public final class SoftwareUpdater {
         hooks.onFound = { [weak self] item in self?.note(item, at: .available) }
         hooks.onDownloaded = { [weak self] item in self?.note(item, at: .downloaded) }
         hooks.onStaged = { [weak self] item, install in
-            self?.note(item, at: .ready)
-            self?.installStaged = install
+            // A skipped release is never installed behind the user's back either.
+            guard let self, note(item, at: .ready) else { return }
+            installStaged = install
         }
         hooks.onChoice = { [weak self] choice in self?.resolve(choice) }
         hooks.onNothingFound = { [weak self] in self?.pending = nil }
@@ -163,6 +164,8 @@ public final class SoftwareUpdater {
     /// a scheduled check leaves, and is installed from there.
     public func checkQuietly() {
         guard controller.updater.canCheckForUpdates else { return }
+        // Asking is asking again: a release skipped earlier is offered once more.
+        defaults.removeObject(forKey: Self.skippedKey)
         isChecking = true
         lastCheckFailure = nil
         controller.updater.checkForUpdateInformation()
@@ -180,6 +183,16 @@ public final class SoftwareUpdater {
         }
     }
 
+    /// The row's Skip. The release is dropped, and later scheduled checks keep quiet
+    /// about that build; a newer one is offered as usual.
+    public func skipPending() {
+        guard let pending else { return }
+        WindowLog.log("update skipped from the row version=\(pending.version) build=\(pending.build)")
+        defaults.set(pending.build, forKey: Self.skippedKey)
+        installStaged = nil
+        self.pending = nil
+    }
+
     public func setChecksAutomatically(_ enabled: Bool) {
         controller.updater.automaticallyChecksForUpdates = enabled
         checksAutomatically = controller.updater.automaticallyChecksForUpdates
@@ -195,11 +208,18 @@ public final class SoftwareUpdater {
     /// Records a release, never letting it slip back a stage: Sparkle reports the same
     /// item from several places, and "found" arriving after "downloaded" is a repeat,
     /// not a regression.
-    private func note(_ item: SUAppcastItem, at stage: PendingUpdate.Stage) {
+    @discardableResult
+    private func note(_ item: SUAppcastItem, at stage: PendingUpdate.Stage) -> Bool {
+        guard Self.shouldOffer(build: item.versionString,
+                               skipped: defaults.string(forKey: Self.skippedKey)) else {
+            WindowLog.log("update ignored, skipped build=\(item.versionString)")
+            return false
+        }
         let update = PendingUpdate(version: item.displayVersionString,
                                    build: item.versionString, stage: stage)
         pending = Self.merge(current: pending, incoming: update)
         WindowLog.log("update pending version=\(update.version) build=\(update.build) stage=\(stage)")
+        return true
     }
 
     /// Only a choice ends the row. "Remind me later" is not one: it is the user
@@ -264,6 +284,12 @@ public final class SoftwareUpdater {
     }
 
     private nonisolated static let pendingKey = "MuStatsPendingUpdate"
+    private nonisolated static let skippedKey = "MuStatsSkippedBuild"
+
+    /// Whether a found release is news: anything but the one build the user skipped.
+    public nonisolated static func shouldOffer(build: String, skipped: String?) -> Bool {
+        build != skipped
+    }
 
     private nonisolated static var runningBuild: String? {
         Bundle.main.infoDictionary?["CFBundleVersion"] as? String
@@ -272,6 +298,12 @@ public final class SoftwareUpdater {
     /// Only the identity is written. The stage is not, because it describes Sparkle's
     /// in-process state, which does not survive the process either: a staged install
     /// runs on quit, and a half-downloaded one is fetched again.
+    /// Records `update` as outstanding in `defaults`, so an updater built on them starts
+    /// with it. For demo screenshots, which have no feed to find one in.
+    public nonisolated static func seed(_ update: PendingUpdate, in defaults: UserDefaults) {
+        store(update, in: defaults)
+    }
+
     private nonisolated static func store(_ update: PendingUpdate?, in defaults: UserDefaults) {
         guard let update else {
             defaults.removeObject(forKey: pendingKey)

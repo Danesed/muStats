@@ -47,7 +47,17 @@ final class AppCoordinator {
         }
         let store = SettingsStore(directory: directory)
         let engine = MetricsEngine(settingsStore: store)
-        let updater = SoftwareUpdater()
+        var updaterDefaults = UserDefaults.standard
+        // A demo never sees a real update. MUSTATS_DEMO_UPDATE names a version to show
+        // as waiting, kept in a throwaway domain rather than in the app's own.
+        if demo != nil, let version = environment["MUSTATS_DEMO_UPDATE"], !version.isEmpty,
+           let scratch = UserDefaults(suiteName: "com.danesed.muStats.demo") {
+            scratch.removePersistentDomain(forName: "com.danesed.muStats.demo")
+            SoftwareUpdater.seed(PendingUpdate(version: version, build: "999999", stage: .available),
+                                 in: scratch)
+            updaterDefaults = scratch
+        }
+        let updater = SoftwareUpdater(defaults: updaterDefaults)
         let authority = NotificationAuthority()
         self.settingsStore = store
         self.engine = engine
@@ -126,7 +136,9 @@ final class AppCoordinator {
         engine.staleOverride = false
         // "panel", "settings" or a PanelModule to open expanded.
         guard let target = ProcessInfo.processInfo.environment["MUSTATS_DEMO_OPEN"] else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+        // Two seconds: at one the status item was sometimes not placed yet, and the
+        // panel had nothing to hang from.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
             guard let self else { return }
             switch target {
             case "panel": self.togglePanel()

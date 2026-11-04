@@ -87,8 +87,8 @@ MUSTATS_DEMO=nominal MUSTATS_DEMO_OPEN=panel \
 
 `MUSTATS_DEMO` takes a scenario (`nominal`, `underLoad`, `charging`, `charged`,
 `degraded`, `pending`). `MUSTATS_DEMO_OPEN` takes `panel`, `settings` or a module to open
-expanded (`cpu`, `memory`, …), and `MUSTATS_DEMO_SETTINGS` a `settings.json` to start
-from. A demo keeps its settings in a temporary folder and samples, alerts and updates
+expanded (`cpu`, `memory`, …), `MUSTATS_DEMO_SETTINGS` a `settings.json` to start
+from, and `MUSTATS_DEMO_UPDATE` a version to show as an available update. A demo keeps its settings in a temporary folder and samples, alerts and updates
 nothing. Quit the installed copy first, so only one status item is on screen.
 
 ## Commits

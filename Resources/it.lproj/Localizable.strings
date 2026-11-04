@@ -295,6 +295,8 @@
 "Saved position" = "Posizione salvata";
 "Serious" = "Grave";
 "Settings" = "Impostazioni";
+"Settings, update available" = "Impostazioni, aggiornamento disponibile";
+"Settings. An update is available." = "Impostazioni. È disponibile un aggiornamento.";
 "Settings File" = "File delle impostazioni";
 "Settings sections" = "Sezioni delle impostazioni";
 "Settings…" = "Impostazioni…";
@@ -462,3 +464,7 @@
 "Search for muStats, then drag a widget to the desktop." = "Cerca muStats, poi trascina un widget sulla scrivania.";
 "Adding a Widget" = "Aggiungere un widget";
 "Changes here redraw the widgets at once. Their readings refresh about every 15 minutes, as often as macOS allows, and each widget shows when its reading was taken." = "Le modifiche qui ridisegnano subito i widget. I valori si aggiornano circa ogni 15 minuti, il massimo che macOS consente, e ogni widget mostra l'ora della lettura.";
+"Install" = "Installa";
+"Skip" = "Salta";
+"Skip this version. A newer one will still be offered." = "Salta questa versione. Le successive verranno comunque proposte.";
+"Hides this version until a newer one is released" = "Nasconde questa versione finché non ne esce una più recente";

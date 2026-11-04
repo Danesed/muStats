@@ -60,6 +60,13 @@ struct PendingUpdateTests {
         #expect(!SoftwareUpdater.shouldRestore(pendingBuild: "8", runningBuild: nil))
     }
 
+    @Test("a skipped build stays quiet, and a newer one is offered")
+    func skippedBuildIsQuiet() {
+        #expect(!SoftwareUpdater.shouldOffer(build: "8", skipped: "8"))
+        #expect(SoftwareUpdater.shouldOffer(build: "9", skipped: "8"))
+        #expect(SoftwareUpdater.shouldOffer(build: "8", skipped: nil))
+    }
+
     /// Sparkle reports the same item from several delegates in no fixed order, and a
     /// "found" arriving after "staged" is the same update again, not a step back.
     @Test("the stage climbs and never falls")
