@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- WidgetKit loads only sandboxed extensions. The widgets read the kernel's
+	     own counters, which the sandbox allows. -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<!-- One read-only exception: the app's own folder, where it writes widget.json
+	     with the readings and colours chosen in its settings. -->
+	<key>com.apple.security.temporary-exception.files.home-relative-path.read-only</key>
+	<array>
+		<string>/Library/Application Support/muStats/</string>
+	</array>
+</dict>
+</plist>

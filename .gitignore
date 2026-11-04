@@ -1,0 +1,34 @@
+.build/
+.build-*/
+*.xcresult
+
+# SwiftPM incremental-build artifacts. These land in the repo root rather than under
+# .build when a build is driven with an explicit output directory, so the wildcards
+# above do not catch them.
+*.o
+*.d
+*.swiftdeps
+*.swiftdeps~
+
+# Output of `AirStat --render`.
+render/
+
+# Superseded by site/benchmark.html, which is the tracked copy.
+benchmark-report.html
+
+.DS_Store
+
+# Output of Scripts/release.sh.
+dist/
+
+# Local working notes, not published
+CLAUDE.md
+AGENTS.md
+
+# Local working notes, not published
+docs/IDEAS.md
+
+# A one-off `npx vercel` leaves these behind. Nothing in this repo is a Node package.
+node_modules/
+package.json
+package-lock.json
