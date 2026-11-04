@@ -29,7 +29,7 @@ enum CommandLineTool {
         case "help":
             print(help)
         case "version":
-            let info = Bundle.main.infoDictionary
+            let info = appInfo
             print("μStats \(info?["CFBundleShortVersionString"] as? String ?? "dev") (\(info?["CFBundleVersion"] as? String ?? "0"))")
         case "status":
             let snapshot = Sampler(modules: Set(modules)).read()
@@ -46,6 +46,16 @@ enum CommandLineTool {
     }
 
     // MARK: Commands
+
+    /// The app's Info.plist. Homebrew runs the binary through a symlink in its bin
+    /// folder, and from there `Bundle.main` is not the app, so the link is resolved
+    /// and the bundle found three levels up (Contents/MacOS/muStats).
+    private static var appInfo: [String: Any]? {
+        let executable = (Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0]))
+            .resolvingSymlinksInPath()
+        let app = executable.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        return Bundle(url: app)?.infoDictionary ?? Bundle.main.infoDictionary
+    }
 
     private static func top(_ arguments: [String], json: Bool, formatter: MetricFormatter) {
         var count = 10
