@@ -144,9 +144,9 @@ struct WindowTortureTests {
 
         controller.show(anchoredTo: nil, on: screen)
         let collapsed = try #require(controller.window?.frame.height)
-        let scrollView = try #require(scrollView(in: controller.window?.contentView))
+        let scroller = try #require(scrollView(in: controller.window?.contentView))
         // However the scroll document is oriented, this is the y its top lives at.
-        let topY = scrollView.documentVisibleRect.origin.y
+        let topY = scroller.documentVisibleRect.origin.y
         controller.hide()
         await Task.yield()
 
@@ -162,18 +162,18 @@ struct WindowTortureTests {
         try await Task.sleep(for: .milliseconds(500))
         #expect(window.frame.height < collapsed + 500,
                 "panel was not capped: \(window.frame.height)")
-        let document = try #require(scrollView.documentView)
-        #expect(document.frame.height > scrollView.contentView.bounds.height,
+        let document = try #require(scroller.documentView)
+        #expect(document.frame.height > scroller.contentView.bounds.height,
                 "panel did not become scrollable")
-        scrollView.contentView.bounds.origin = NSPoint(x: 0, y: topY + 40)
+        scroller.contentView.bounds.origin = NSPoint(x: 0, y: topY + 40)
 
         controller.toggleModule(.cpu)
         try await Task.sleep(for: .milliseconds(500))
 
         #expect(abs(window.frame.height - collapsed) < 2,
                 "panel did not return to its collapsed height: \(window.frame.height) vs \(collapsed)")
-        #expect(abs(scrollView.documentVisibleRect.origin.y - topY) < 1,
-                "scroll offset \(scrollView.documentVisibleRect.origin.y) left the top clipped")
+        #expect(abs(scroller.documentVisibleRect.origin.y - topY) < 1,
+                "scroll offset \(scroller.documentVisibleRect.origin.y) left the top clipped")
         controller.hide()
     }
 

@@ -593,8 +593,8 @@ public struct MenuBarRenderModel: Equatable, Sendable {
         if key.isNormalized {
             return values.map { $0.isFinite ? min(max($0, 0), 1) : .infinity }
         }
-        let peak = max(peak(of: values), .leastNonzeroMagnitude)
-        return values.map { $0.isFinite ? min(max($0 / peak, 0), 1) : .infinity }
+        let ceiling = max(peak(of: values), .leastNonzeroMagnitude)
+        return values.map { $0.isFinite ? min(max($0 / ceiling, 0), 1) : .infinity }
     }
 
     /// Two unbounded series scaled against their shared peak, so the pair can be read
@@ -607,9 +607,9 @@ public struct MenuBarRenderModel: Equatable, Sendable {
         guard a.count > 1 || b.count > 1 else { return ([], []) }
         let lhs = a.values
         let rhs = b.values
-        let peak = max(max(peak(of: lhs), peak(of: rhs)), .leastNonzeroMagnitude)
+        let ceiling = max(max(peak(of: lhs), peak(of: rhs)), .leastNonzeroMagnitude)
         let scale = { (values: [Float]) in
-            values.map { $0.isFinite ? min(max($0 / peak, 0), 1) : .infinity }
+            values.map { $0.isFinite ? min(max($0 / ceiling, 0), 1) : .infinity }
         }
         return (scale(lhs), scale(rhs))
     }

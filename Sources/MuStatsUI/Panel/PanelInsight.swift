@@ -95,11 +95,11 @@ struct PanelInsight: Equatable {
         guard let module = worst else { return partial }
         let level = PanelAlert.level(for: module, engine: engine)
         if level == .none {
-            let relevant = candidates.filter { relevant($0, engine: engine) }
-            guard !relevant.isEmpty else { return partial }
-            let available = relevant.filter { available($0, engine: engine) }.count
-            if available == relevant.count { return quiet }
-            return available == 0 && relevant.allSatisfy { pending($0, engine: engine) } ? collecting : partial
+            let reporting = candidates.filter { relevant($0, engine: engine) }
+            guard !reporting.isEmpty else { return partial }
+            let readable = reporting.filter { available($0, engine: engine) }.count
+            if readable == reporting.count { return quiet }
+            return readable == 0 && reporting.allSatisfy { pending($0, engine: engine) } ? collecting : partial
         }
         let processes = engine.processes.value?.processes ?? []
 
