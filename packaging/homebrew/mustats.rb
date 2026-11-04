@@ -21,6 +21,12 @@ cask "mustats" do
   app "muStats.app"
   binary "#{appdir}/muStats.app/Contents/MacOS/muStats", target: "mustats"
 
+  # Signed ad hoc, not notarized: without this Gatekeeper blocks the first launch.
+  # Drop it once releases carry a Developer ID signature.
+  postflight_steps do
+    run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{appdir}}/muStats.app"]
+  end
+
   uninstall quit: "com.danesed.muStats"
 
   zap trash: [

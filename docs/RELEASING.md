@@ -29,12 +29,22 @@ beside it for Sparkle, and a cask in the `Danesed/homebrew-tap` repository.
    cask (Homebrew finds `danesed/tap` by that exact name). Clone the tap beside this
    checkout as `../homebrew-tap`.
 
+## Without a Developer ID
+
+Until there is a Developer ID certificate, releases are signed ad hoc and not
+notarized: run `Scripts/release.sh --adhoc` in step 3 below and skip setup steps 1
+and 2. Everything else is the same. Gatekeeper blocks the downloaded app on first
+launch until the user allows it; the cask removes the quarantine flag after install,
+so Homebrew users never see it. Sparkle checks updates against its own key, which does
+not need Apple. Once a Developer ID exists, drop `--adhoc` and the cask's
+`postflight_steps`.
+
 ## Each release
 
 1. Bump `CFBundleShortVersionString` (and `CFBundleVersion`, a whole number that only
    grows) in `Resources/Info.plist` and in `Resources/Widgets/Info.plist`.
 2. Write the notes under `## <version>` in `CHANGELOG.md`.
-3. Run `Scripts/release.sh`. It builds, signs every nested binary, notarizes and staples
+3. Run `Scripts/release.sh` (or `Scripts/release.sh --adhoc`, see above). It builds, signs every nested binary, notarizes and staples
    the app and the dmg, signs the dmg for Sparkle, and adds the release to
    `appcast.xml`. It refuses to start if the changelog has no notes for the version.
 4. Follow the steps it prints:

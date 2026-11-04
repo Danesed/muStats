@@ -27,7 +27,18 @@ brew install --cask danesed/tap/mustats
 ```
 
 Or download [muStats.dmg](https://github.com/Danesed/muStats/releases/latest/download/muStats.dmg),
-open it and drag μStats to Applications. The app is signed and notarized.
+open it and drag μStats to Applications.
+
+μStats is not notarized by Apple yet, so macOS blocks the first launch of the
+downloaded app. Open it once, then go to **System Settings > Privacy & Security** and
+click **Open Anyway**, or run:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/muStats.app
+```
+
+Homebrew does this for you. Updates arrive through the app and are verified with the
+project's own signing key.
 
 Requires macOS 14 or later on Apple silicon.
 

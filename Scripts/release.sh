@@ -7,10 +7,17 @@
 # ticket, and that ticket stapled onto the file so it validates with no network.
 #
 #   Scripts/release.sh          → .dmg in dist/
+#   Scripts/release.sh --adhoc  → the same without a Developer ID: signed ad hoc, not
+#                                 notarized. Gatekeeper blocks it on first open until
+#                                 the user allows it (the Homebrew cask does that for
+#                                 them). Sparkle still verifies updates with its own key.
 #
 # Requires a Developer ID Application certificate in the keychain and a notarytool
 # credential profile. Both are one-time setup; see the preflight errors below.
 set -euo pipefail
+
+ADHOC=0
+if [ "${1:-}" = "--adhoc" ]; then ADHOC=1; fi
 
 cd "$(dirname "$0")/.."
 ROOT="$PWD"
@@ -42,40 +49,42 @@ DMG="$DIST/muStats.dmg"
 # version CHANGELOG.md has no entry for is refused here instead.
 uv run Scripts/appcast.py --version "$VERSION" --check
 
-if ! security find-identity -v -p codesigning | grep -q "$IDENTITY"; then
-  echo "error: no '$IDENTITY' certificate in the keychain." >&2
-  echo "  Xcode > Settings > Accounts > Manage Certificates > + > Developer ID Application" >&2
-  exit 1
-fi
-
-if ! NOTARY_CHECK="$(xcrun notarytool history --keychain-profile "$PROFILE" 2>&1)"; then
-  # A profile that exists can still be refused. Apple answers 403 when a developer
-  # agreement is waiting to be accepted, and that is not fixed by storing credentials,
-  # so anything other than a missing profile is shown as Apple worded it.
-  if ! grep -q "No Keychain password item found" <<<"$NOTARY_CHECK"; then
-    echo "error: notarytool cannot reach Apple with the '$PROFILE' profile:" >&2
-    sed 's/^/  /' <<<"$NOTARY_CHECK" >&2
+if [ "$ADHOC" = 0 ]; then
+  if ! security find-identity -v -p codesigning | grep -q "$IDENTITY"; then
+    echo "error: no '$IDENTITY' certificate in the keychain." >&2
+    echo "  Xcode > Settings > Accounts > Manage Certificates > + > Developer ID Application" >&2
     exit 1
   fi
-  # The App Store Connect key is a file on disk, so the command below can name the real
-  # one rather than a placeholder to be worked out under pressure. The issuer cannot be
-  # recovered from anything local: it is the UUID on App Store Connect > Users and
-  # Access > Integrations > App Store Connect API.
-  KEY_FILE="$(ls "$HOME"/private_keys/AuthKey_*.p8 2>/dev/null | head -n 1)"
-  if [ -n "$KEY_FILE" ]; then
-    KEY_ID="$(basename "$KEY_FILE" .p8)"
-    KEY_ID="${KEY_ID#AuthKey_}"
-  else
-    KEY_FILE="~/private_keys/AuthKey_XXXXXXXXXX.p8"
-    KEY_ID="XXXXXXXXXX"
+
+  if ! NOTARY_CHECK="$(xcrun notarytool history --keychain-profile "$PROFILE" 2>&1)"; then
+    # A profile that exists can still be refused. Apple answers 403 when a developer
+    # agreement is waiting to be accepted, and that is not fixed by storing credentials,
+    # so anything other than a missing profile is shown as Apple worded it.
+    if ! grep -q "No Keychain password item found" <<<"$NOTARY_CHECK"; then
+      echo "error: notarytool cannot reach Apple with the '$PROFILE' profile:" >&2
+      sed 's/^/  /' <<<"$NOTARY_CHECK" >&2
+      exit 1
+    fi
+    # The App Store Connect key is a file on disk, so the command below can name the real
+    # one rather than a placeholder to be worked out under pressure. The issuer cannot be
+    # recovered from anything local: it is the UUID on App Store Connect > Users and
+    # Access > Integrations > App Store Connect API.
+    KEY_FILE="$(ls "$HOME"/private_keys/AuthKey_*.p8 2>/dev/null | head -n 1)"
+    if [ -n "$KEY_FILE" ]; then
+      KEY_ID="$(basename "$KEY_FILE" .p8)"
+      KEY_ID="${KEY_ID#AuthKey_}"
+    else
+      KEY_FILE="~/private_keys/AuthKey_XXXXXXXXXX.p8"
+      KEY_ID="XXXXXXXXXX"
+    fi
+    echo "error: no notarytool credential profile named '$PROFILE'." >&2
+    echo "  Store it once, then run this script again:" >&2
+    echo "    xcrun notarytool store-credentials $PROFILE \\" >&2
+    echo "      --key $KEY_FILE \\" >&2
+    echo "      --key-id $KEY_ID \\" >&2
+    echo "      --issuer <uuid from App Store Connect > Integrations > App Store Connect API>" >&2
+    exit 1
   fi
-  echo "error: no notarytool credential profile named '$PROFILE'." >&2
-  echo "  Store it once, then run this script again:" >&2
-  echo "    xcrun notarytool store-credentials $PROFILE \\" >&2
-  echo "      --key $KEY_FILE \\" >&2
-  echo "      --key-id $KEY_ID \\" >&2
-  echo "      --issuer <uuid from App Store Connect > Integrations > App Store Connect API>" >&2
-  exit 1
 fi
 
 if [ ! -x "$SPARKLE_BIN/sign_update" ]; then
@@ -99,49 +108,53 @@ APP="$(Scripts/build.sh release | tail -n 1)"
 # detritus not allowed" that names no file.
 xattr -cr "$APP"
 
-# Sparkle's framework holds two XPC services, the Autoupdate tool and Updater.app, and
-# notarization checks every one of them, so each is signed before the thing containing
-# it. Innermost first: signing a container records the hashes of what it holds.
-#
-# --deep is deliberately not used on any of it, which is Sparkle's own instruction. The
-# Downloader service carries an entitlement that belongs to it alone, and a deep
-# signature would overwrite it with this app's.
-FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework"
-codesign --force --options runtime --timestamp \
-  --sign "$IDENTITY" "$FRAMEWORK/Versions/B/XPCServices/Installer.xpc"
-codesign --force --options runtime --timestamp --preserve-metadata=entitlements \
-  --sign "$IDENTITY" "$FRAMEWORK/Versions/B/XPCServices/Downloader.xpc"
-codesign --force --options runtime --timestamp \
-  --sign "$IDENTITY" "$FRAMEWORK/Versions/B/Autoupdate"
-codesign --force --options runtime --timestamp \
-  --sign "$IDENTITY" "$FRAMEWORK/Versions/B/Updater.app"
-codesign --force --options runtime --timestamp \
-  --sign "$IDENTITY" "$FRAMEWORK"
-
-# The widget extension, with its sandbox entitlement, before the app that seals it.
-codesign --force --options runtime --timestamp \
-  --entitlements Resources/Widgets/Widgets.entitlements \
-  --sign "$IDENTITY" "$APP/Contents/PlugIns/MuStatsWidgets.appex"
-
-# --options runtime is the hardened runtime, which notarization refuses to accept
-# without. --timestamp pins the signature to a trusted clock so it stays valid after
-# the certificate itself expires.
-codesign --force --options runtime --timestamp \
-  --sign "$IDENTITY" "$APP"
-
-codesign --verify --strict --deep "$APP"
-
-# Notarize the app itself before packaging so the ticket can be stapled into the
-# bundle. Stapling only the .dmg leaves the copy the user drags to /Applications
-# without a ticket, and its first launch then needs a working network to verify.
-ZIP="$DIST/muStats-app.zip"
 mkdir -p "$DIST"
-rm -f "$ZIP" "$DMG"
-ditto -c -k --keepParent "$APP" "$ZIP"
+rm -f "$DMG"
 
-xcrun notarytool submit "$ZIP" --keychain-profile "$PROFILE" --wait
-xcrun stapler staple "$APP"
-rm -f "$ZIP"
+if [ "$ADHOC" = 0 ]; then
+  # Sparkle's framework holds two XPC services, the Autoupdate tool and Updater.app, and
+  # notarization checks every one of them, so each is signed before the thing containing
+  # it. Innermost first: signing a container records the hashes of what it holds.
+  #
+  # --deep is deliberately not used on any of it, which is Sparkle's own instruction. The
+  # Downloader service carries an entitlement that belongs to it alone, and a deep
+  # signature would overwrite it with this app's.
+  FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework"
+  codesign --force --options runtime --timestamp \
+    --sign "$IDENTITY" "$FRAMEWORK/Versions/B/XPCServices/Installer.xpc"
+  codesign --force --options runtime --timestamp --preserve-metadata=entitlements \
+    --sign "$IDENTITY" "$FRAMEWORK/Versions/B/XPCServices/Downloader.xpc"
+  codesign --force --options runtime --timestamp \
+    --sign "$IDENTITY" "$FRAMEWORK/Versions/B/Autoupdate"
+  codesign --force --options runtime --timestamp \
+    --sign "$IDENTITY" "$FRAMEWORK/Versions/B/Updater.app"
+  codesign --force --options runtime --timestamp \
+    --sign "$IDENTITY" "$FRAMEWORK"
+
+  # The widget extension, with its sandbox entitlement, before the app that seals it.
+  codesign --force --options runtime --timestamp \
+    --entitlements Resources/Widgets/Widgets.entitlements \
+    --sign "$IDENTITY" "$APP/Contents/PlugIns/MuStatsWidgets.appex"
+
+  # --options runtime is the hardened runtime, which notarization refuses to accept
+  # without. --timestamp pins the signature to a trusted clock so it stays valid after
+  # the certificate itself expires.
+  codesign --force --options runtime --timestamp \
+    --sign "$IDENTITY" "$APP"
+
+  codesign --verify --strict --deep "$APP"
+
+  # Notarize the app itself before packaging so the ticket can be stapled into the
+  # bundle. Stapling only the .dmg leaves the copy the user drags to /Applications
+  # without a ticket, and its first launch then needs a working network to verify.
+  ZIP="$DIST/muStats-app.zip"
+  rm -f "$ZIP"
+  ditto -c -k --keepParent "$APP" "$ZIP"
+
+  xcrun notarytool submit "$ZIP" --keychain-profile "$PROFILE" --wait
+  xcrun stapler staple "$APP"
+  rm -f "$ZIP"
+fi
 
 # A .dmg opens as a window holding the app next to a shortcut to /Applications, so
 # installing is one drag. `hdiutil create -srcfolder` makes that image but records no
@@ -160,13 +173,18 @@ uv run --with dmgbuild dmgbuild \
   -D root="$ROOT" \
   "μStats" "$DMG" 2> >(grep -v "^hdiutil: WARNING: .* is deprecated" >&2) >/dev/null
 
-codesign --force --timestamp --sign "$IDENTITY" "$DMG"
-xcrun notarytool submit "$DMG" --keychain-profile "$PROFILE" --wait
-xcrun stapler staple "$DMG"
+if [ "$ADHOC" = 0 ]; then
+  codesign --force --timestamp --sign "$IDENTITY" "$DMG"
+  xcrun notarytool submit "$DMG" --keychain-profile "$PROFILE" --wait
+  xcrun stapler staple "$DMG"
 
-# What Gatekeeper will decide on the user's machine. Anything but "accepted" here is
-# what they would see instead of the app opening.
-spctl --assess --type open --context context:primary-signature -v "$DMG"
+  # What Gatekeeper will decide on the user's machine. Anything but "accepted" here is
+  # what they would see instead of the app opening.
+  spctl --assess --type open --context context:primary-signature -v "$DMG"
+else
+  # build.sh signed everything ad hoc; this only proves the seal is intact.
+  codesign --verify --strict --deep "$APP"
+fi
 
 # A second copy under the version, because the unversioned name is about to be
 # overwritten by the next run and a dmg is minutes of notarization to reproduce.

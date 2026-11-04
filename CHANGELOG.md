@@ -19,3 +19,5 @@ headings exactly as they are below.
 - Per-process energy, and a `mustats` command-line tool.
 - Update notice at the top of the panel, with Install and Skip, and a badge on the
   Settings button while an update is waiting.
+- Settings > Panel: choose when the status line shows, which modules appear, and every
+  part of their details. Hidden parts are not read.

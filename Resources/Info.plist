@@ -53,9 +53,11 @@
 	<key>SUAutomaticallyUpdate</key>
 	<false/>
 	<key>SUEnableAutomaticChecks</key>
-	<false/>
+	<true/>
 	<key>SUFeedURL</key>
 	<string>https://github.com/Danesed/muStats/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>WcTQb2c25b2/JDULQDf9k23qBjG4XouB0FBAlCNWXcE=</string>
 	<key>SUScheduledCheckInterval</key>
 	<integer>604800</integer>
 </dict>
