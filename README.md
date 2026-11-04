@@ -148,7 +148,7 @@ and no analytics. The app makes these network requests and no others:
 
 ## Resource use
 
-Measured on an M3 Pro with the panel closed and the default menu bar: 21 MB of memory
+Measured on an M4 Pro with the panel closed and the default menu bar: 21 MB of memory
 (`footprint`) and 0.5% of one core on average over 20 seconds (`top`). It samples only
 what is on screen, so the numbers depend on what you show.
 
