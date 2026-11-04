@@ -29,7 +29,9 @@ enum PanelAlert {
         case .cpu:
             guard let cpu = engine.cpu.value else { return .none }
             let busy = cpu.total.busy
-            let cores = Double(ProcessInfo.processInfo.activeProcessorCount)
+            // The cores the reading was taken on, so a fixture judges the same on any host.
+            let cores = Double(cpu.perCore.isEmpty ? ProcessInfo.processInfo.activeProcessorCount
+                                                   : cpu.perCore.count)
             let highLoad = cpu.loadAverage.one >= cores
             if busy >= 0.90 || (highLoad && busy >= 0.75) { return .critical }
             if busy >= 0.65 || highLoad { return .warning }
