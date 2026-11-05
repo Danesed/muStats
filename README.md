@@ -177,10 +177,8 @@ open /Applications/muStats.app
 See [CONTRIBUTING.md](CONTRIBUTING.md) for tests and code layout, and
 [docs/RELEASING.md](docs/RELEASING.md) for signing, updates and the Homebrew tap.
 
-## Support
+## Feedback
 
-μStats is free and open source. You can support it through
-[GitHub Sponsors](https://github.com/sponsors/Danesed) or [Ko-fi](https://ko-fi.com/danesed).
 Bugs and requests go on the [issue tracker](https://github.com/Danesed/muStats/issues).
 
 ## Credits
