@@ -6,6 +6,20 @@
         <description>μStats releases.</description>
         <language>en</language>
         <item>
+            <title>0.1.1</title>
+            <sparkle:version>2</sparkle:version>
+            <sparkle:shortVersionString>0.1.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <pubDate>Fri, 06 Nov 2026 11:14:31 +0000</pubDate>
+            <sparkle:fullReleaseNotesLink>https://github.com/Danesed/muStats/blob/main/CHANGELOG.md</sparkle:fullReleaseNotesLink>
+            <description sparkle:format="markdown">### Fixed
+
+- `mustats version` reports the real version when run through the Homebrew link.
+- The D-S-K caption beside the disk bar is aligned on one left edge.
+</description>
+            <enclosure url="https://github.com/Danesed/muStats/releases/download/v0.1.1/muStats.dmg" sparkle:edSignature="k4dT/qCltWBqtPEKbroaBDYi/cPma7X1noX6eH1UQ2ElnSLdfwvutlEOOweVtEUgDelQn5IZSQE1x8R+vY7vBQ==" length="7032978" type="application/octet-stream" />
+        </item>
+        <item>
             <title>0.1.0</title>
             <sparkle:version>1</sparkle:version>
             <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>

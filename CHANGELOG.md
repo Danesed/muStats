@@ -4,6 +4,13 @@ Each release has up to three groups: New, Improved and Fixed. `Scripts/appcast.p
 this file, so the update window and this page always say the same thing. Keep the
 headings exactly as they are below.
 
+## 0.1.1
+
+### Fixed
+
+- `mustats version` reports the real version when run through the Homebrew link.
+- The D-S-K caption beside the disk bar is aligned on one left edge.
+
 ## 0.1.0
 
 ### New
