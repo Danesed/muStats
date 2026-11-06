@@ -922,6 +922,9 @@ public final class MenuBarContentView: NSView {
         ceil(3 * fonts[.sideLabel].capHeight + 2 * Layout.sideLabelRowGap)
     }
 
+    /// Captions drawn on a shared left edge rather than centred. See `drawSideLabel`.
+    private static let leftAlignedCaptions: Set<String> = ["DSK"]
+
     /// The column a stacked label takes: its widest letter.
     private func sideLabelWidth(_ text: String) -> CGFloat {
         text.map { width(String($0), role: .sideLabel) }.max() ?? 0
@@ -929,6 +932,10 @@ public final class MenuBarContentView: NSView {
 
     /// The caption stacked beside a bar, one letter to a row, reading top to bottom
     /// and each letter optically centred on the column's vertical axis.
+    ///
+    /// Except D-S-K, chosen by eye on a 1x display: centred, the S sat between the
+    /// stems of the D and the K and read as drifting right. Those letters share their
+    /// left ink edge instead, a device pixel in from the column's edge.
     private func drawSideLabel(_ text: String, x: CGFloat, color: CGColor,
                                scale: CGFloat, context: CGContext) {
         let cap = fonts[.sideLabel].capHeight
@@ -942,12 +949,16 @@ public final class MenuBarContentView: NSView {
         let bottomBaseline = snap(pillY + stackInset, scale)
 
         context.setFillColor(color)
+        let leftEdge: CGFloat? = Self.leftAlignedCaptions.contains(text)
+            ? snap(colCenter - (text.compactMap { cachedText(String($0), role: .sideLabel)?.inkWidth }.max() ?? 0) / 2,
+                   scale) + 1 / scale
+            : nil
         for (row, letter) in text.enumerated() {
             let str = String(letter)
             guard let cached = cachedText(str, role: .sideLabel) else { continue }
             // Optical centering: align each letter's visual ink center with the column's centerline.
             let centerOffset = cached.inkOffset + cached.inkWidth / 2
-            let textX = colCenter - centerOffset
+            let textX = leftEdge.map { $0 - cached.inkOffset } ?? colCenter - centerOffset
             let baseline = bottomBaseline + (rows - 1 - CGFloat(row)) * pitch
             context.textPosition = CGPoint(x: textX, y: snap(baseline, scale))
             CTLineDraw(cached.line, context)
