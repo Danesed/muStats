@@ -87,6 +87,53 @@ public final class NetworkCollector: MetricSource {
     /// address per network) instead of once per interface per sample.
     private var macCache: [String: (packed: UInt64, text: String)] = [:]
 
+    /// Raised by configd when an address, a route or the resolver list changes.
+    ///
+    /// Addresses and routes change when a network does, a few times a day, and were
+    /// being re-read every sample: a `getifaddrs` walk and three round trips to
+    /// configd, to learn each time that nothing had moved. configd already knows when
+    /// something does and will say so, which turns the read into an event.
+    private final class ChangeFlag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var raised = true
+
+        func raise() {
+            lock.lock()
+            raised = true
+            lock.unlock()
+        }
+
+        /// Whether it was raised since the last call, lowering it.
+        func take() -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            let was = raised
+            raised = false
+            return was
+        }
+    }
+
+    private struct Addresses {
+        var ipv4: String?
+        var ipv6: String?
+        var hasRoutableAddress = false
+    }
+
+    private let configurationChanged = ChangeFlag()
+    private let eventQueue = DispatchQueue(label: "com.danesed.mustats.network.events", qos: .utility)
+    /// What the last read of the configuration found, served until the next one.
+    private var addressCache: [String: Addresses] = [:]
+    private var primaryNameCache: String?
+    private var routerCache: String?
+    private var resolverCache: [String] = []
+    private var lastConfigurationRead: ContinuousClock.Instant?
+    /// The interfaces and their flags at the last read. A link going up or down is
+    /// seen here a sample before configd finishes telling anyone.
+    private var linkSignature = 0
+    /// The longest the configuration goes unread whatever configd says, so a missed
+    /// notification costs a stale address for half a minute and not for the session.
+    static let configurationRefreshInterval: Duration = .seconds(30)
+
     private var store: SCDynamicStore?
     private var dnsKey: CFString?
     private var primaryIPv4Key: CFString?
@@ -164,7 +211,27 @@ public final class NetworkCollector: MetricSource {
     /// and `SCNetworkInterfaceCopyAll` plus the CoreWLAN warm-up are the two most
     /// allocation-heavy calls in the collector.
     private func acquire() {
-        store = SCDynamicStoreCreate(nil, "com.danesed.mustats.network" as CFString, nil, nil)
+        var context = SCDynamicStoreContext(
+            version: 0, info: Unmanaged.passUnretained(configurationChanged).toOpaque(),
+            retain: { UnsafeRawPointer(Unmanaged<ChangeFlag>.fromOpaque($0).retain().toOpaque()) },
+            release: { Unmanaged<ChangeFlag>.fromOpaque($0).release() },
+            copyDescription: nil)
+        store = SCDynamicStoreCreate(nil, "com.danesed.mustats.network" as CFString, { _, _, info in
+            guard let info else { return }
+            Unmanaged<ChangeFlag>.fromOpaque(info).takeUnretainedValue().raise()
+        }, &context)
+        if let store {
+            let keys = ["State:/Network/Global/IPv4", "State:/Network/Global/IPv6",
+                        "State:/Network/Global/DNS"] as CFArray
+            let patterns = ["State:/Network/Interface/.*/IPv4", "State:/Network/Interface/.*/IPv6",
+                            "State:/Network/Interface/.*/Link"] as CFArray
+            if SCDynamicStoreSetNotificationKeys(store, keys, patterns) {
+                SCDynamicStoreSetDispatchQueue(store, eventQueue)
+            }
+        }
+        // Whatever was cached belongs to the session before the stop.
+        configurationChanged.raise()
+        lastConfigurationRead = nil
         primaryIPv4Key = SCDynamicStoreKeyCreateNetworkGlobalEntity(
             nil, kSCDynamicStoreDomainState, kSCEntNetIPv4)
         primaryIPv6Key = SCDynamicStoreKeyCreateNetworkGlobalEntity(
@@ -190,7 +257,13 @@ public final class NetworkCollector: MetricSource {
     }
 
     public func stop() {
+        if let store { SCDynamicStoreSetDispatchQueue(store, nil) }
         store = nil
+        addressCache = [:]
+        primaryNameCache = nil
+        routerCache = nil
+        resolverCache = []
+        lastConfigurationRead = nil
         dnsKey = nil
         primaryIPv4Key = nil
         primaryIPv6Key = nil
@@ -225,10 +298,37 @@ public final class NetworkCollector: MetricSource {
             return .failure(.failed("the kernel reported no network interfaces"))
         }
 
-        var indexByName: [String: Int] = [:]
-        indexByName.reserveCapacity(links.count)
-        for (index, link) in links.enumerated() { indexByName[link.name] = index }
-        applyAddresses(to: &links, indexByName: indexByName)
+        let signature = Self.signature(of: links.map { ($0.name, $0.flags) })
+        // The flag is taken first so a change raised during this read is kept for the
+        // next sample and not lowered unread.
+        let changed = configurationChanged.take()
+        let readsConfiguration = Self.configurationIsDue(
+            changed: changed, linksChanged: signature != linkSignature,
+            resuming: context.isFirstSample || context.didWakeFromSleep,
+            sinceLastRead: lastConfigurationRead.map { ContinuousClock.now - $0 })
+        if readsConfiguration {
+            var indexByName: [String: Int] = [:]
+            indexByName.reserveCapacity(links.count)
+            for (index, link) in links.enumerated() { indexByName[link.name] = index }
+            applyAddresses(to: &links, indexByName: indexByName)
+            addressCache.removeAll(keepingCapacity: true)
+            for link in links {
+                addressCache[link.name] = Addresses(ipv4: link.ipv4, ipv6: link.ipv6,
+                                                    hasRoutableAddress: link.hasRoutableAddress)
+            }
+            primaryNameCache = primaryInterfaceName()
+            routerCache = routerAddress()
+            resolverCache = resolverAddresses()
+            linkSignature = signature
+            lastConfigurationRead = .now
+        } else {
+            for index in links.indices {
+                guard let known = addressCache[links[index].name] else { continue }
+                links[index].ipv4 = known.ipv4
+                links[index].ipv6 = known.ipv6
+                links[index].hasRoutableAddress = known.hasRoutableAddress
+            }
+        }
         classifyNewNames(links)
 
         // A wake re-baselines rather than differencing: the counters survive sleep but
@@ -319,11 +419,11 @@ public final class NetworkCollector: MetricSource {
         latencyProbe.refreshIfDue()
         lossProbe.refreshIfDue()
 
-        let primaryName = primaryInterfaceName()
-        let router = routerAddress()
+        let primaryName = primaryNameCache
+        let router = routerCache
         routerProbe.setTarget(router)
         routerProbe.refreshIfDue()
-        let dns = resolverAddresses()
+        let dns = resolverCache
         let primary = primaryName.flatMap { name in stats.first { $0.name == name } }
         sort(&stats, primaryName: primaryName)
 
@@ -459,6 +559,27 @@ public final class NetworkCollector: MetricSource {
                            address.load(fromByteOffset: start + index, as: UInt8.self))
         }
         macCache[name] = (packed, text)
+    }
+
+    /// Whether this sample re-reads addresses, routes and resolvers.
+    ///
+    /// On configd's word, when an interface appeared, vanished or changed state, on
+    /// the first sample and after a wake, and otherwise twice a minute.
+    static func configurationIsDue(changed: Bool, linksChanged: Bool, resuming: Bool,
+                                   sinceLastRead: Duration?) -> Bool {
+        if changed || linksChanged || resuming { return true }
+        guard let sinceLastRead else { return true }
+        return sinceLastRead >= configurationRefreshInterval
+    }
+
+    /// One number for the set of interfaces and the state each is in.
+    static func signature(of links: [(name: String, flags: Int32)]) -> Int {
+        var hasher = Hasher()
+        for link in links {
+            hasher.combine(link.name)
+            hasher.combine(link.flags)
+        }
+        return hasher.finalize()
     }
 
     /// Addresses and link-layer addresses, which the counter MIB does not carry.
