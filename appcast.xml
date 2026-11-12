@@ -7,16 +7,16 @@
         <language>en</language>
         <item>
             <title>0.2.1</title>
-            <sparkle:version>4</sparkle:version>
+            <sparkle:version>5</sparkle:version>
             <sparkle:shortVersionString>0.2.1</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <pubDate>Thu, 12 Nov 2026 12:00:50 +0000</pubDate>
+            <pubDate>Thu, 12 Nov 2026 12:03:39 +0000</pubDate>
             <sparkle:fullReleaseNotesLink>https://github.com/Danesed/muStats/blob/main/CHANGELOG.md</sparkle:fullReleaseNotesLink>
             <description sparkle:format="markdown">### New
 
 - A new app icon: a serif μ with the status dot, on the chip's floorplan drawn as a load map, where a darker cell is a busier one.
 </description>
-            <enclosure url="https://github.com/Danesed/muStats/releases/download/v0.2.1/muStats.dmg" sparkle:edSignature="wl+4IB/L3Aruxk8+zaTqPvZbTz0WR+DmCMHaAF1Es4R64sGseDpWeyY2S9Sf+HDtr+eGLAosc5rgp+5vWHz2AA==" length="9602888" type="application/octet-stream" />
+            <enclosure url="https://github.com/Danesed/muStats/releases/download/v0.2.1/muStats.dmg" sparkle:edSignature="N/0kbLF0fzKemA/fDM9pDNnMgyAExaiynLZ3ftX7fX3WZS76hvlPK7U3yS7wL/dnteP2kz8vzF8w+OGBkEnKDg==" length="9601211" type="application/octet-stream" />
         </item>
         <item>
             <title>0.2.0</title>
