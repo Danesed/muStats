@@ -101,7 +101,9 @@ if [ ! -f "$SPARKLE_KEY" ]; then
   exit 1
 fi
 
-APP="$(Scripts/build.sh release | tail -n 1)"
+# Both architectures in one app, so a single download runs on Apple silicon and on
+# the Intel Macs that macOS 14 and 15 still support.
+APP="$(Scripts/build.sh release --arch arm64 --arch x86_64 | tail -n 1)"
 
 # Extended attributes picked up from the filesystem (quarantine flags, Finder info)
 # make codesign fail with a bare "resource fork, Finder information, or similar

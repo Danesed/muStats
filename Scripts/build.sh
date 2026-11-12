@@ -7,6 +7,8 @@
 #
 #   Scripts/build.sh            → debug build
 #   Scripts/build.sh release    → optimised build
+#   Scripts/build.sh release --arch arm64 --arch x86_64
+#                               → optimised build for Apple silicon and Intel Macs
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -26,7 +28,8 @@ cp "$BIN_DIR/muStats" "$APP/Contents/MacOS/muStats"
 # target as the SDK version, so the binary claims it was built against macOS 14.
 # AppKit reads that claim to decide whether the app gets the current system design or
 # the compatibility look, so it is put back to the SDK the build actually used.
-MIN_OS="$(vtool -show-build "$APP/Contents/MacOS/muStats" | awk '/minos/ { print $2 }')"
+# A universal binary reports one build version per architecture; they are the same.
+MIN_OS="$(vtool -show-build "$APP/Contents/MacOS/muStats" | awk '/minos/ { print $2; exit }')"
 SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version)"
 vtool -set-build-version macos "$MIN_OS" "$SDK_VERSION" -replace \
   -output "$APP/Contents/MacOS/muStats" "$APP/Contents/MacOS/muStats"
@@ -124,7 +127,7 @@ PY
 EXT="$APP/Contents/PlugIns/MuStatsWidgets.appex"
 mkdir -p "$EXT/Contents/MacOS" "$EXT/Contents/Resources"
 cp "$BIN_DIR/MuStatsWidgets" "$EXT/Contents/MacOS/MuStatsWidgets"
-WIDGET_MIN_OS="$(vtool -show-build "$EXT/Contents/MacOS/MuStatsWidgets" | awk '/minos/ { print $2 }')"
+WIDGET_MIN_OS="$(vtool -show-build "$EXT/Contents/MacOS/MuStatsWidgets" | awk '/minos/ { print $2; exit }')"
 vtool -set-build-version macos "$WIDGET_MIN_OS" "$SDK_VERSION" -replace \
   -output "$EXT/Contents/MacOS/MuStatsWidgets" "$EXT/Contents/MacOS/MuStatsWidgets"
 cp Resources/Widgets/Info.plist "$EXT/Contents/Info.plist"
