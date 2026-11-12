@@ -7,121 +7,195 @@
 <meta name="description" content="μStats shows CPU, memory, GPU, network, disk, battery and temperature in the Mac menu bar. It names the app behind a high reading and knows what is usual for your Mac. Free and open source.">
 <meta property="og:title" content="μStats">
 <meta property="og:description" content="A lightweight system monitor for the Mac menu bar. Free and open source.">
-<meta property="og:image" content="https://danesed.github.io/muStats/assets/screenshots/hero.png">
+<meta property="og:image" content="https://danesed.github.io/muStats/assets/hero.png">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="color-scheme" content="light dark">
 <link rel="icon" href="assets/icon.png">
-<style>
-  /* Dark first: the app lives in the menu bar and its panel is dark glass. */
-  :root {
-    --bg: #101113; --bg-raised: #17191c; --line: #26292e; --fg: #f2f3f5; --fg-2: #a6abb3; --fg-3: #6d737c;
-    --accent: #5aa9ff; --accent-ink: #06121f; --calm: #34c759; --warn: #ff9f0a; --alert: #ff453a;
-    --radius: 14px; --wrap: 1080px;
-    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
-    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    color-scheme: dark;
+<script>
+// Before the first paint: the reader's choice, or the system's, so the page never
+// flashes the other theme. "#shot-dark" and "#shot-light" are for the README picture.
+(function () {
+  var root = document.documentElement, hash = location.hash, theme = null;
+  if (hash.indexOf("#shot") === 0) {
+    root.classList.add("shot"); theme = hash.indexOf("light") > 0 ? "light" : "dark";
+    if (hash.indexOf("2x") > 0) root.style.zoom = 2;
   }
-  @media (prefers-color-scheme: light) {
-    :root {
-      --bg: #f6f6f4; --bg-raised: #ffffff; --line: #e1e1dc; --fg: #15161a; --fg-2: #50555e; --fg-3: #858a93;
-      --accent: #0a66d8; --accent-ink: #ffffff; color-scheme: light;
-    }
+  try { theme = theme || localStorage.getItem("theme"); } catch (e) {}
+  if (theme !== "light" && theme !== "dark") {
+    theme = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  root.dataset.theme = theme;
+})();
+</script>
+<style>
+  :root {
+    --bg: #FAF8F3; --surface: #FFFFFF; --sand: #F7ECD9; --pale: #FEF9ED; --slate: #DCE2ED;
+    --deep: #5D524B; --on-deep: #F7ECD9; --on-deep-2: rgba(247,236,217,.72);
+    --ink: #191919; --ink-2: rgba(25,25,25,.7); --ink-3: rgba(25,25,25,.5);
+    --line: rgba(25,25,25,.08); --line-2: #B7B4AF; --tint: rgba(25,25,25,.06);
+    --stage-a: #F7ECD9; --stage-b: #E6D2B8; --stage-glow: rgba(255,255,255,.75);
+    --menubar: rgba(255,255,255,.55); --shadow: rgba(60,40,20,.22);
+    --calm: #2F9E44; --alert: #D64533; --notice: #2B6CB0;
+    --serif: "Segoe Serif", ui-serif, "New York", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --sans: "Segoe Sans", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --wrap: 1180px; --card: 28px;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #141210; --surface: #1F1C19; --sand: #2B2520; --pale: #1B1815; --slate: #222A32;
+    --deep: #EFE6D6; --on-deep: #231E19; --on-deep-2: rgba(35,30,25,.72);
+    --ink: #F5F0E7; --ink-2: rgba(245,240,231,.72); --ink-3: rgba(245,240,231,.5);
+    --line: rgba(245,240,231,.1); --line-2: #57504A; --tint: rgba(245,240,231,.08);
+    --stage-a: #33291F; --stage-b: #1A1613; --stage-glow: rgba(255,214,170,.10);
+    --menubar: rgba(20,18,16,.5); --shadow: rgba(0,0,0,.55);
+    --calm: #51CF66; --alert: #FF6B5A; --notice: #74B3F5;
+    color-scheme: dark;
   }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
-  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.55 var(--sans); -webkit-font-smoothing: antialiased; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--sans); -webkit-font-smoothing: antialiased; transition: background-color .3s ease, color .3s ease; }
   img { max-width: 100%; height: auto; display: block; }
   a { color: inherit; }
-  .wrap { max-width: var(--wrap); margin: 0 auto; padding-inline: max(20px, env(safe-area-inset-left)) max(20px, env(safe-area-inset-right)); }
-  h1, h2, h3 { text-wrap: balance; line-height: 1.12; margin: 0; letter-spacing: -0.02em; }
-  h1 { font-size: clamp(2.3rem, 6vw, 4rem); font-weight: 700; }
-  h2 { font-size: clamp(1.6rem, 3.6vw, 2.3rem); font-weight: 650; }
-  h3 { font-size: 1.05rem; font-weight: 600; letter-spacing: -0.01em; }
   p { margin: 0; }
-  .lead { color: var(--fg-2); font-size: clamp(1.05rem, 2vw, 1.25rem); max-width: 60ch; }
-  .eyebrow { font: 600 0.72rem/1 var(--sans); letter-spacing: 0.09em; text-transform: uppercase; color: var(--fg-3); }
-  section { padding-block: clamp(56px, 9vw, 104px); border-top: 1px solid var(--line); }
-  .stack { display: grid; gap: 18px; }
+  .wrap { max-width: var(--wrap); margin: 0 auto; padding-inline: max(20px, env(safe-area-inset-left)) max(20px, env(safe-area-inset-right)); }
+  h1, h2, h3 { font-family: var(--serif); font-weight: 400; margin: 0; text-wrap: balance; }
+  h1 { font-size: clamp(3rem, 9.4vw, 7.2rem); line-height: .95; letter-spacing: -0.035em; }
+  h2 { font-size: clamp(1.9rem, 4.2vw, 3.75rem); line-height: 1.02; letter-spacing: -0.02em; }
+  h3 { font-size: clamp(1.5rem, 2.6vw, 2.25rem); line-height: 1.1; letter-spacing: -0.03em; }
+  .label { font-size: .875rem; line-height: 1.3; color: var(--ink-2); }
+  .body { color: var(--ink-2); max-width: 46ch; }
+  section { padding-block: clamp(48px, 8vw, 110px); }
+  :focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; border-radius: 8px; }
 
-  /* Header */
-  header { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-bottom: 1px solid var(--line); }
-  .bar { display: flex; align-items: center; gap: 20px; height: 56px; }
-  .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; text-decoration: none; margin-right: auto; }
-  .brand img { width: 26px; height: 26px; }
-  nav { display: flex; gap: 20px; font-size: 0.92rem; }
-  nav a { color: var(--fg-2); text-decoration: none; }
-  nav a:hover { color: var(--fg); }
-  .lang { font: 600 0.75rem var(--sans); color: var(--fg-2); background: none; border: 1px solid var(--line); border-radius: 8px; padding: 5px 9px; cursor: pointer; }
-  @media (max-width: 720px) { nav { display: none; } }
+  /* The app, in the page's theme. */
+  .for-dark { display: none; }
+  [data-theme="dark"] .for-light { display: none; }
+  [data-theme="dark"] .for-dark { display: block; }
+  .shot { display: block; }
+  .shot img { border-radius: 15px; filter: drop-shadow(0 18px 34px var(--shadow)); }
 
-  /* Buttons */
-  .btn { display: inline-flex; align-items: center; gap: 9px; padding: 12px 20px; border-radius: 11px; font-weight: 600; text-decoration: none; border: 1px solid var(--line); background: var(--bg-raised); cursor: pointer; font-size: 1rem; color: var(--fg); }
-  .btn:hover { border-color: var(--fg-3); }
-  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
-  .btn.primary:hover { filter: brightness(1.08); }
-  .btn small { font-weight: 500; opacity: 0.8; }
-  .count { font: 600 0.85rem var(--mono); padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--fg) 10%, transparent); }
-  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+  /* Navigation */
+  header { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+  .bar { display: flex; align-items: center; gap: 22px; height: 68px; }
+  .brand { display: flex; align-items: center; gap: 10px; font: 400 1.35rem var(--serif); letter-spacing: -0.02em; text-decoration: none; margin-right: auto; }
+  .brand img { width: 28px; height: 28px; }
+  nav { display: flex; gap: 26px; font-size: .94rem; }
+  nav a { text-decoration: none; color: var(--ink-2); }
+  nav a:hover { color: var(--ink); }
+  .pill { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 44px; padding: 0 22px; border-radius: 50px; border: 0; background: var(--tint); color: var(--ink); font: 500 .95rem var(--sans); text-decoration: none; cursor: pointer; white-space: nowrap; transition: background-color .2s ease, transform .2s ease; }
+  .pill:hover { background: color-mix(in srgb, var(--ink) 12%, transparent); }
+  .pill.solid { background: var(--ink); color: var(--bg); }
+  .pill.solid:hover { background: color-mix(in srgb, var(--ink) 86%, var(--bg)); }
+  .pill.small { min-height: 34px; padding: 0 14px; font-size: .82rem; }
+  .pill small { font-weight: 400; opacity: .7; font-size: .85em; }
+  .count { font: 500 .8rem var(--mono); opacity: .75; }
+  .theme { display: inline-flex; padding: 3px; gap: 2px; border-radius: 50px; background: var(--tint); border: 0; cursor: pointer; }
+  .theme span { width: 30px; height: 28px; border-radius: 50px; display: grid; place-items: center; color: var(--ink-3); transition: background-color .25s ease, color .25s ease; }
+  .theme svg { width: 15px; height: 15px; }
+  [data-theme="light"] .theme .sun, [data-theme="dark"] .theme .moon { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px var(--line); }
+  @media (max-width: 820px) { nav { display: none; } .bar .download { display: none; } }
 
   /* Hero */
-  .hero { padding-block: clamp(48px, 8vw, 96px) 0; border-top: 0; text-align: center; }
-  .hero .stack { justify-items: center; gap: 22px; }
-  .status { display: inline-flex; align-items: center; gap: 9px; font: 500 0.9rem var(--sans); color: var(--fg-2); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; background: var(--bg-raised); }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--calm); }
-  .actions { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
-  .brew { display: inline-flex; align-items: center; gap: 12px; font: 0.88rem var(--mono); color: var(--fg-2); border: 1px solid var(--line); border-radius: 10px; padding: 9px 9px 9px 14px; background: var(--bg-raised); max-width: 100%; overflow-x: auto; white-space: nowrap; }
-  .copy { font: 600 0.75rem var(--sans); color: var(--fg-2); background: none; border: 1px solid var(--line); border-radius: 7px; padding: 4px 9px; cursor: pointer; }
-  .fine { color: var(--fg-3); font-size: 0.85rem; }
-  .shot { margin-top: clamp(28px, 5vw, 56px); border-radius: var(--radius) var(--radius) 0 0; overflow: hidden; border: 1px solid var(--line); border-bottom: 0; }
+  .hero { padding-block: clamp(40px, 7vw, 92px) 0; text-align: center; }
+  .hero-copy { display: grid; justify-items: center; gap: 26px; }
+  .status { display: inline-flex; align-items: center; gap: 9px; font-size: .875rem; color: var(--ink-2); background: var(--tint); border-radius: 50px; padding: 7px 15px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--calm); flex: none; }
+  .hero .body { max-width: 54ch; font-size: clamp(1rem, 1.6vw, 1.15rem); }
+  .actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+  .brew { display: inline-flex; align-items: center; gap: 12px; max-width: 100%; font: .84rem var(--mono); color: var(--ink-2); border: 1px solid var(--line); border-radius: 50px; padding: 5px 5px 5px 18px; overflow-x: auto; white-space: nowrap; }
+  .fine { font-size: .84rem; color: var(--ink-3); }
 
-  /* Three questions */
-  .cols { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
-  .card { background: var(--bg-raised); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; display: grid; gap: 10px; align-content: start; grid-template-rows: auto 1fr auto; min-width: 0; }
-  .card p { color: var(--fg-2); font-size: 0.96rem; }
-  .q { display: flex; align-items: center; gap: 9px; }
+  /* The desk: a menu bar and three panels on it, drawn by the page so it follows the theme. */
+  .stage { margin-top: clamp(34px, 5vw, 60px); border-radius: var(--card); overflow: hidden; position: relative; text-align: left;
+           background: radial-gradient(120% 90% at 78% 0%, var(--stage-glow), transparent 60%), linear-gradient(160deg, var(--stage-a), var(--stage-b)); }
+  .menubar { display: flex; align-items: center; gap: 18px; height: 30px; padding: 0 14px; font: 500 13px var(--sans); color: var(--ink); background: var(--menubar); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+  .menubar b { font-weight: 700; }
+  .menubar .apps { display: flex; gap: 18px; margin-right: auto; overflow: hidden; white-space: nowrap; }
+  .menubar .shot img { height: 22px; width: auto; border-radius: 5px; filter: none; }
+  .menubar .clock { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .windows { display: grid; grid-template-columns: repeat(2, minmax(0, 380px)); justify-content: center; align-items: start; gap: clamp(16px, 3vw, 36px); padding: clamp(18px, 3vw, 34px) clamp(14px, 3vw, 34px) 0; max-height: 620px; }
+  .windows .col { display: grid; gap: clamp(14px, 2.4vw, 26px); }
+  @media (max-width: 640px) { .menubar .apps span:nth-child(n+3) { display: none; } .windows { max-height: 420px; } }
+
+  /* Stacked cards: one answer each. */
+  .stack { display: grid; gap: 14px; margin-top: clamp(28px, 4vw, 52px); }
+  .panel { border-radius: var(--card); padding: clamp(24px, 4vw, 52px); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 380px); gap: clamp(24px, 5vw, 72px); align-items: center; overflow: hidden; background: var(--surface); }
+  .panel.sand { background: var(--sand); }
+  .panel.slate { background: var(--slate); }
+  .panel .text { display: grid; gap: 16px; align-content: center; }
+  .panel .view { max-height: 400px; align-self: end; margin-bottom: calc(-1 * clamp(24px, 4vw, 52px)); -webkit-mask-image: linear-gradient(#000 78%, transparent); mask-image: linear-gradient(#000 78%, transparent); }
+  .panel .view.tail { display: flex; align-items: flex-end; height: 400px; margin-bottom: 0; align-self: center; -webkit-mask-image: linear-gradient(transparent, #000 22%); mask-image: linear-gradient(transparent, #000 22%); }
+  .q { display: inline-flex; align-items: center; gap: 9px; }
   .q i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
-  .line { font: 0.8rem/1.45 var(--mono); color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 9px; padding: 9px 12px; overflow-wrap: anywhere; align-self: end; }
-  .line b { font-weight: 600; } .line span { color: var(--fg-3); }
+  .say { font: .82rem/1.45 var(--mono); color: var(--ink); background: color-mix(in srgb, var(--bg) 70%, transparent); border-radius: 14px; padding: 11px 15px; overflow-wrap: anywhere; justify-self: start; }
+  .say span { color: var(--ink-3); }
+  @media (max-width: 800px) { .panel { grid-template-columns: 1fr; } .panel .view { max-height: 300px; justify-self: center; } .panel .view.tail { height: 300px; } }
 
-  /* Feature rows */
-  .feature { display: grid; gap: clamp(20px, 4vw, 48px); grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; margin-top: clamp(32px, 6vw, 64px); }
-  .feature.flip > :first-child { order: 2; }
-  .feature .frame { background: #0c0d0f; border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; display: grid; place-items: center; gap: 12px; }
-  .feature .frame img { border-radius: 10px; }
-  .feature ul { margin: 0; padding-left: 1.1em; color: var(--fg-2); display: grid; gap: 6px; font-size: 0.96rem; }
-  @media (max-width: 760px) { .feature { grid-template-columns: 1fr; } .feature.flip > :first-child { order: 0; } }
-  .strip { display: grid; gap: 10px; justify-items: center; }
-  .strip img { height: 30px; width: auto; border-radius: 6px; }
+  /* Tiles */
+  .tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: clamp(28px, 4vw, 52px); }
+  .tile { background: var(--surface); border-radius: var(--card); padding: clamp(22px, 3vw, 36px); display: grid; gap: 12px; align-content: start; overflow: hidden; min-width: 0; }
+  .tile.wide { grid-column: 1 / -1; }
+  .tile ul { margin: 0; padding-left: 1.1em; color: var(--ink-2); display: grid; gap: 6px; font-size: .95rem; }
+  .tile .view { margin-top: 14px; justify-self: center; max-height: 330px; margin-bottom: calc(-1 * clamp(22px, 3vw, 36px)); -webkit-mask-image: linear-gradient(#000 80%, transparent); mask-image: linear-gradient(#000 80%, transparent); }
+  .tile .view.whole { max-height: none; margin-bottom: 0; -webkit-mask-image: none; mask-image: none; }
+  .strips { display: grid; gap: 10px; margin-top: 14px; justify-items: start; }
+  .strips .shot img { height: 30px; width: auto; border-radius: 8px; filter: none; }
+  .term { margin-top: 14px; font: .78rem/1.6 var(--mono); background: var(--ink); color: var(--bg); border-radius: 16px; padding: 16px 18px; overflow-x: auto; white-space: pre; }
+  .term b { font-weight: 500; opacity: .55; }
+  @media (max-width: 800px) { .tiles { grid-template-columns: 1fr; } }
 
-  /* Facts */
-  .facts { width: 100%; border-collapse: collapse; font-size: 0.96rem; }
-  .facts th, .facts td { text-align: left; padding: 12px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
-  .facts th { color: var(--fg-3); font-weight: 500; width: 34%; padding-right: 16px; }
-  .facts td { font-variant-numeric: tabular-nums; }
+  /* Statement and facts */
+  .statement { text-align: center; }
+  .statement h2 { max-width: 20ch; margin-inline: auto; font-size: clamp(1.8rem, 3.4vw, 2.6rem); line-height: 1.15; }
+  .facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: clamp(28px, 4vw, 52px); text-align: left; }
+  .fact { background: var(--surface); border-radius: 20px; padding: 22px 24px; display: grid; gap: 8px; align-content: start; }
+  .fact p { font-size: .95rem; }
+  @media (max-width: 800px) { .facts { grid-template-columns: 1fr; } }
 
   /* Install */
-  .steps { counter-reset: step; display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
-  .steps li { counter-increment: step; display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px; color: var(--fg-2); }
-  .steps li::before { content: counter(step); font: 600 0.8rem var(--mono); color: var(--fg); width: 26px; height: 26px; border: 1px solid var(--line); border-radius: 50%; display: grid; place-items: center; }
-  code { font: 0.86em var(--mono); background: var(--bg-raised); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; }
-  pre { margin: 8px 0 0; font: 0.84rem var(--mono); background: var(--bg-raised); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; overflow-x: auto; color: var(--fg); }
+  .steps { counter-reset: step; display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+  .steps li { counter-increment: step; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; color: var(--ink-2); font-size: .95rem; }
+  .steps li::before { content: counter(step); font: 500 .78rem var(--mono); color: var(--ink); width: 26px; height: 26px; border-radius: 50%; background: var(--tint); display: grid; place-items: center; }
+  code { font: .86em var(--mono); background: var(--tint); border-radius: 6px; padding: 1px 6px; }
+  pre { margin: 6px 0 0; font: .84rem var(--mono); background: var(--tint); border-radius: 14px; padding: 13px 16px; overflow-x: auto; }
 
-  details { border-bottom: 1px solid var(--line); padding: 16px 0; }
-  summary { cursor: pointer; font-weight: 600; list-style: none; display: flex; justify-content: space-between; gap: 16px; }
-  summary::after { content: "+"; color: var(--fg-3); font-weight: 400; }
+  /* FAQ */
+  .faq { max-width: 820px; margin: clamp(24px, 4vw, 44px) auto 0; }
+  details { border-top: 1px solid var(--line-2); padding: 20px 0; }
+  details:last-child { border-bottom: 1px solid var(--line-2); }
+  summary { cursor: pointer; font: 400 1.3rem/1.2 var(--serif); letter-spacing: -0.02em; list-style: none; display: flex; justify-content: space-between; gap: 16px; }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: "+"; font: 300 1.4rem var(--sans); color: var(--ink-3); }
   details[open] summary::after { content: "−"; }
-  details p { color: var(--fg-2); margin-top: 10px; max-width: 68ch; }
+  details p { color: var(--ink-2); margin-top: 12px; max-width: 64ch; }
 
-  .support { text-align: center; }
-  .support .stack { justify-items: center; }
-  footer { border-top: 1px solid var(--line); padding-block: 28px; color: var(--fg-3); font-size: 0.86rem; }
-  footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center; }
-  footer a { color: var(--fg-2); text-decoration: none; } footer a:hover { color: var(--fg); }
+  /* Support */
+  .support { background: var(--deep); color: var(--on-deep); border-radius: var(--card); padding: clamp(36px, 7vw, 96px) clamp(24px, 5vw, 72px); text-align: center; display: grid; gap: 22px; justify-items: center; }
+  .support .body { color: var(--on-deep-2); max-width: 52ch; }
+  .support .label { color: var(--on-deep-2); }
+  .support .pill { background: color-mix(in srgb, var(--on-deep) 16%, transparent); color: var(--on-deep); }
+  .support .pill.solid { background: var(--on-deep); color: var(--deep); }
 
-  .toast { position: fixed; left: 50%; bottom: 22px; transform: translate(-50%, 140%); transition: transform .35s ease; background: var(--bg-raised); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; box-shadow: 0 18px 50px rgba(0,0,0,.35); width: min(560px, calc(100vw - 32px)); z-index: 10; font-size: 0.94rem; }
+  footer { padding-block: 34px 44px; color: var(--ink-3); font-size: .86rem; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: center; }
+  footer a { color: var(--ink-2); text-decoration: none; } footer a:hover { color: var(--ink); }
+  footer .mark { font: 400 1.1rem var(--serif); color: var(--ink); margin-right: auto; }
+
+  .toast { position: fixed; left: 50%; bottom: 22px; transform: translate(-50%, 150%); transition: transform .35s ease; background: var(--ink); color: var(--bg); border-radius: 24px; padding: 14px 16px 14px 22px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; box-shadow: 0 18px 50px var(--shadow); width: min(600px, calc(100vw - 32px)); z-index: 10; font-size: .94rem; }
   .toast.on { transform: translate(-50%, 0); }
-  .toast p { flex: 1 1 240px; color: var(--fg-2); }
-  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .toast { transition: none; } }
+  .toast p { flex: 1 1 240px; }
+  .toast .pill { background: color-mix(in srgb, var(--bg) 18%, transparent); color: var(--bg); }
+  .toast .pill.solid { background: var(--bg); color: var(--ink); }
+
+  /* The README picture: only the desk. */
+  .shot-mode header, .shot-mode .hero-copy, .shot-mode main > section:not(.hero), .shot-mode footer, .shot-mode .toast { display: none; }
+  html.shot header, html.shot .hero-copy, html.shot main > section:not(.hero), html.shot footer, html.shot .toast { display: none; }
+  html.shot .hero { padding: 0; } html.shot .wrap { max-width: none; padding: 0; } html.shot .stage { margin: 0; border-radius: 0; }
+  html.shot .windows { max-height: 700px; }
+
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { transition: none !important; } }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -132,157 +206,182 @@
     <a class="brand" href="#top"><img src="assets/icon.png" alt="">μStats</a>
     <nav aria-label="Sections">
       <a href="#answers" data-it="Cosa fa">What it does</a>
+      <a href="#views" data-it="Viste">Views</a>
       <a href="#install" data-it="Installa">Install</a>
       <a href="#faq" data-it="Domande">FAQ</a>
-      <a href="#support" data-it="Sostieni">Support</a>
       <a href="https://github.com/Danesed/muStats">GitHub</a>
     </nav>
-    <button class="lang" id="lang" type="button" aria-label="Language">IT</button>
+    <button class="theme" id="theme" type="button" aria-label="Switch between light and dark" data-it-label="Passa da chiaro a scuro">
+      <span class="sun"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></span>
+      <span class="moon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg></span>
+    </button>
+    <button class="pill small" id="lang" type="button" aria-label="Language">IT</button>
+    <a class="pill small solid download" href="https://github.com/Danesed/muStats/releases/latest/download/muStats.dmg" data-it="Scarica">Download</a>
   </div>
 </header>
 
 <main id="top">
 <section class="hero">
-  <div class="wrap stack">
-    <span class="status"><i class="dot"></i><span data-it="Tutto nella norma">Everything looks normal</span></span>
-    <h1 data-it="Il tuo Mac, in un colpo d'occhio.">Your Mac, in one glance.</h1>
-    <p class="lead" data-it="μStats è un monitor di sistema leggero per la barra dei menu. Dice se tutto va bene, quale app è la causa quando non va bene, e cosa è normale per questo Mac a quest'ora.">μStats is a lightweight system monitor for the menu bar. It tells you if all is well, which app is the cause when it is not, and what is usual for this Mac at this hour.</p>
-    <div class="actions">
-      <a class="btn primary" id="download" href="https://github.com/Danesed/muStats/releases/latest/download/muStats.dmg"><span data-it="Scarica per macOS">Download for macOS</span> <small id="version"></small></a>
-      <a class="btn" href="https://github.com/Danesed/muStats" rel="noopener">★ <span data-it="Metti una stella su GitHub">Star on GitHub</span> <span class="count" id="stars" hidden></span></a>
+  <div class="wrap">
+    <div class="hero-copy">
+      <span class="status"><i class="dot"></i><span data-it="Tutto nella norma">Everything looks normal</span></span>
+      <h1 data-it="Il tuo Mac,<br>in un colpo d'occhio">Your Mac,<br>in one glance</h1>
+      <p class="body" data-it="μStats è un monitor di sistema leggero per la barra dei menu. Dice se tutto va bene, quale app è la causa quando non va bene, e cosa è normale per questo Mac a quest'ora.">μStats is a lightweight system monitor for the menu bar. It tells you if all is well, which app is the cause when it is not, and what is usual for this Mac at this hour.</p>
+      <div class="actions">
+        <a class="pill solid" href="https://github.com/Danesed/muStats/releases/latest/download/muStats.dmg"><span data-it="Scarica per macOS">Download for macOS</span> <small id="version"></small></a>
+        <a class="pill" href="https://github.com/Danesed/muStats" rel="noopener">★ <span data-it="Metti una stella su GitHub">Star on GitHub</span> <span class="count" id="stars" hidden></span></a>
+      </div>
+      <div class="brew"><span id="brewcmd">brew install --cask danesed/tap/mustats</span><button class="pill small" type="button" data-copy="brewcmd" data-it="Copia">Copy</button></div>
+      <p class="fine" data-it="Gratis e open source (MIT). macOS 14 o successivo, Apple silicon e Intel.">Free and open source (MIT). macOS 14 or later, Apple silicon and Intel.</p>
     </div>
-    <div class="brew"><span id="brewcmd">brew install --cask danesed/tap/mustats</span><button class="copy" type="button" data-copy="brewcmd" data-it="Copia">Copy</button></div>
-    <p class="fine" data-it="Gratis e open source (MIT). macOS 14 o successivo, Apple silicon e Intel.">Free and open source (MIT). macOS 14 or later, Apple silicon and Intel.</p>
+    <div class="stage" id="stage">
+      <div class="menubar" aria-hidden="true">
+        <div class="apps"><b>Finder</b><span>File</span><span>Edit</span><span>View</span><span>Go</span><span>Window</span><span>Help</span></div>
+        <span class="shot"><img class="for-light" loading="lazy" src="shots/light/menubar-rings.png" width="194" alt="" data-it-alt=""><img class="for-dark" loading="lazy" src="shots/dark/menubar-rings.png" width="194" alt="" data-it-alt=""></span>
+        <span class="clock">Thu 12 Nov&nbsp; 9:41</span>
+      </div>
+      <div class="windows">
+        <div class="col"><span class="shot"><img class="for-light" loading="lazy" src="shots/light/panel-chip.png" width="380" alt="Chip view: the die with its cores and GPU, and the memory modules beside it" data-it-alt="Vista Chip: il die con core e GPU, e i moduli di memoria accanto"><img class="for-dark" loading="lazy" src="shots/dark/panel-chip.png" width="380" alt="Chip view: the die with its cores and GPU, and the memory modules beside it" data-it-alt="Vista Chip: il die con core e GPU, e i moduli di memoria accanto"></span> <span class="shot"><img class="for-light" loading="lazy" src="shots/light/panel-today.png" width="380" alt="Today view: CPU over the last 24 hours with one event marked" data-it-alt="Vista Oggi: CPU nelle ultime 24 ore con un evento segnato"><img class="for-dark" loading="lazy" src="shots/dark/panel-today.png" width="380" alt="Today view: CPU over the last 24 hours with one event marked" data-it-alt="Vista Oggi: CPU nelle ultime 24 ore con un evento segnato"></span></div>
+        <div class="col"><span class="shot"><img class="for-light" loading="lazy" src="shots/light/panel-cpu.png" width="380" alt="The panel with the CPU module open: cores, apps and history" data-it-alt="Il pannello con il modulo CPU aperto: core, app e storia"><img class="for-dark" loading="lazy" src="shots/dark/panel-cpu.png" width="380" alt="The panel with the CPU module open: cores, apps and history" data-it-alt="Il pannello con il modulo CPU aperto: core, app e storia"></span></div>
+      </div>
+    </div>
   </div>
-  <div class="wrap"><div class="shot"><img src="assets/screenshots/hero.png" width="1940" height="1480" alt="μStats: rings in the menu bar and the panel with the Now, Today and Chip views" data-it-alt="μStats: anelli nella barra dei menu e il pannello con le viste Adesso, Oggi e Chip"></div></div>
 </section>
 
 <section id="answers">
-  <div class="wrap stack">
-    <p class="eyebrow" data-it="Tre domande, un secondo">Three questions, one second</p>
-    <h2 data-it="Un monitor mostra numeri. μStats dà risposte.">A monitor shows numbers. μStats gives answers.</h2>
-    <div class="cols" style="margin-top:14px">
-      <div class="card">
-        <h3 class="q"><i style="background:var(--calm)"></i><span data-it="Va tutto bene?">Is all well?</span></h3>
-        <p data-it="La prima riga del pannello lo dice a parole. Quando una riga richiede attenzione, le altre si attenuano.">The first line of the panel says so in words. When one row needs attention, the others step back.</p>
-        <div class="line"><b data-it="Tutto nella norma">Everything looks normal</b></div>
-      </div>
-      <div class="card">
-        <h3 class="q"><i style="background:var(--alert)"></i><span data-it="Di chi è la colpa?">Who is to blame?</span></h3>
-        <p data-it="μStats somma tutti i processi di un'app. Quaranta helper del browser diventano una riga, con CPU, memoria ed energia.">μStats adds up every process of an app. Forty browser helpers become one row, with CPU, memory and energy.</p>
-        <div class="line"><b data-it="Pressione memoria 88%">Memory pressure 88%</b> <span data-it="di solito 23%">usually 23%</span> &nbsp;Google Chrome 8.2 GB</div>
-      </div>
-      <div class="card">
-        <h3 class="q"><i style="background:var(--accent)"></i><span data-it="È normale per questo Mac?">Is this normal for this Mac?</span></h3>
-        <p data-it="μStats impara da 30 giorni di storia dove sta di solito questo Mac a ogni ora. I grafici mostrano quella fascia.">μStats learns from 30 days of history where this Mac usually sits at each hour. Charts draw that range.</p>
-        <div class="line"><b data-it="CPU insolitamente occupata">CPU is unusually busy</b> <span data-it="58%, di solito 12%">58%, usually 12%</span></div>
-      </div>
-    </div>
-
-    <div class="feature">
-      <div class="stack">
-        <p class="eyebrow" data-it="Barra dei menu">Menu bar</p>
-        <h2 data-it="17 metriche, nello stile che preferisci.">17 metrics, in the style you prefer.</h2>
-        <ul>
-          <li data-it="Anelli, barre, testo, grafici e indicatori, in un elemento o in più elementi.">Rings, bars, text, graphs and indicators, in one item or several.</li>
-          <li data-it="Sei serie di colori per gli anelli, oppure i tuoi colori.">Six colour sets for the rings, or your own colours.</li>
-          <li data-it="Widget per la scrivania in tre misure.">Desktop widgets in three sizes.</li>
-        </ul>
-      </div>
-      <div class="frame strip">
-        <img src="assets/screenshots/menubar-base.png" alt="CPU, memory and disk bars, temperature and network">
-        <img src="assets/screenshots/menubar-rings.png" alt="Rings next to temperature and network">
-        <img src="assets/screenshots/menubar-graphs.png" alt="Graphs, mini graphs and status dots">
-        <img src="assets/screenshots/menubar-icons.png" alt="Icons with text and the battery indicator">
-      </div>
-    </div>
-
-    <div class="feature flip">
-      <div class="stack">
-        <p class="eyebrow" data-it="Pannello">Panel</p>
-        <h2 data-it="Il dettaglio a un clic, il colpevole già visibile.">Detail one click away, the cause already on screen.</h2>
-        <ul>
-          <li data-it="Se una lettura è in allarme, il pannello si apre su quel modulo.">If a reading is in alert, the panel opens on that module.</li>
-          <li data-it="Storia da 5 minuti a 30 giorni, con la fascia abituale di questo Mac.">History from 5 minutes to 30 days, with this Mac's usual range.</li>
-          <li data-it="Se ora tutto è calmo, la prima riga dice cosa è successo mentre il pannello era chiuso.">If all is calm now, the first line says what happened while the panel was closed.</li>
-          <li data-it="Previsione: tra quanti giorni il disco sarà pieno.">Forecast: how many days until the disk is full.</li>
-        </ul>
-      </div>
-      <div class="frame"><img src="assets/screenshots/panel-alert.png" width="380" alt="The panel under load, with the app behind the reading named" data-it-alt="Il pannello sotto carico, con il nome dell'app responsabile"></div>
-    </div>
-
-    <div class="feature">
-      <div class="stack">
-        <p class="eyebrow" data-it="App, non processi">Apps, not processes</p>
-        <h2 data-it="Il conto per app.">The bill per app.</h2>
-        <ul>
-          <li data-it="Una riga per app, con tutti i suoi helper sommati.">One row per app, with all of its helpers added up.</li>
-          <li data-it="CPU, memoria ed energia fianco a fianco. Un clic su una colonna ordina la lista.">CPU, memory and energy side by side. A click on a column ranks the list.</li>
-          <li data-it="Chiudi un'app dal menu contestuale della riga.">Quit an app from the row's context menu.</li>
-        </ul>
-      </div>
-      <div class="frame"><img src="assets/screenshots/panel-apps.png" width="380" alt="Top Processes: one row per app with CPU, memory and energy" data-it-alt="Processi principali: una riga per app con CPU, memoria ed energia"></div>
-    </div>
-
-    <div class="feature flip">
-      <div class="stack">
-        <p class="eyebrow" data-it="Oggi">Today</p>
-        <h2 data-it="Le ultime 24 ore, con i momenti notevoli.">The last 24 hours, with the notable moments.</h2>
-        <ul>
-          <li data-it="Trascina sul grafico per vedere quel minuto e il processo in cima.">Drag across the chart to see that minute and the process on top.</li>
-          <li data-it="Vista Chip: il processore disegnato come il suo package, con core, GPU e memoria accesi dal carico reale.">Chip view: the processor drawn as its package, with cores, GPU and memory lit by their real load.</li>
-          <li data-it="Riga di comando: mustats status, mustats top, output JSON.">Command line: <code>mustats status</code>, <code>mustats top</code>, JSON output.</li>
-        </ul>
-      </div>
-      <div class="frame"><img src="assets/screenshots/panel-today.png" width="380" alt="Today view: CPU over the last 24 hours with one event marked" data-it-alt="Vista Oggi: CPU nelle ultime 24 ore con un evento segnato"><img src="assets/screenshots/panel-chip.png" width="380" alt="Chip view: the die with its cores and GPU, and the memory modules beside it" data-it-alt="Vista Chip: il die con core e GPU, e i moduli di memoria accanto"></div>
+  <div class="wrap">
+    <p class="label" data-it="Tre domande, un secondo">Three questions, one second</p>
+    <h2 style="max-width:16ch; margin-top:14px" data-it="Un monitor mostra numeri. μStats dà risposte.">A monitor shows numbers. μStats gives answers.</h2>
+    <div class="stack">
+      <article class="panel">
+        <div class="text">
+          <p class="label q"><i style="background:var(--calm)"></i><span data-it="Riga di stato">Status line</span></p>
+          <h3 data-it="Va tutto bene?">Is all well?</h3>
+          <p class="body" data-it="La prima riga del pannello lo dice a parole. Quando una riga richiede attenzione, le altre si attenuano. Se ora tutto è calmo, la riga dice cosa è successo mentre il pannello era chiuso.">The first line of the panel says so in words. When one row needs attention, the others step back. If all is calm now, the line says what happened while the panel was closed.</p>
+          <p class="say"><b data-it="Picco CPU 85%">CPU peaked at 85%</b> <span data-it="alle 20:31">at 20:31</span> &nbsp;swift-frontend</p>
+        </div>
+        <span class="shot view"><img class="for-light" loading="lazy" src="shots/light/panel-recap.png" width="380" alt="The panel when calm: the status line says what happened while it was closed" data-it-alt="Il pannello a riposo: la riga di stato dice cosa è successo mentre era chiuso"><img class="for-dark" loading="lazy" src="shots/dark/panel-recap.png" width="380" alt="The panel when calm: the status line says what happened while it was closed" data-it-alt="Il pannello a riposo: la riga di stato dice cosa è successo mentre era chiuso"></span>
+      </article>
+      <article class="panel sand">
+        <div class="text">
+          <p class="label q"><i style="background:var(--alert)"></i><span data-it="App, non processi">Apps, not processes</span></p>
+          <h3 data-it="Di chi è la colpa?">Who is to blame?</h3>
+          <p class="body" data-it="μStats somma tutti i processi di un'app. Quaranta helper del browser diventano una riga, con CPU, memoria ed energia fianco a fianco. Un clic su una colonna ordina la lista.">μStats adds up every process of an app. Forty browser helpers become one row, with CPU, memory and energy side by side. A click on a column ranks the list.</p>
+          <p class="say"><b>Google Chrome</b> <span>×41</span> &nbsp;99% &nbsp;8.2 GB &nbsp;4.5 W</p>
+        </div>
+        <span class="shot view tail"><img class="for-light" loading="lazy" src="shots/light/panel-apps.png" width="380" alt="Top Processes: one row per app with CPU, memory and energy" data-it-alt="Processi principali: una riga per app con CPU, memoria ed energia"><img class="for-dark" loading="lazy" src="shots/dark/panel-apps.png" width="380" alt="Top Processes: one row per app with CPU, memory and energy" data-it-alt="Processi principali: una riga per app con CPU, memoria ed energia"></span>
+      </article>
+      <article class="panel slate">
+        <div class="text">
+          <p class="label q"><i style="background:var(--notice)"></i><span data-it="L'abituale di questo Mac">This Mac's usual</span></p>
+          <h3 data-it="È normale per questo Mac?">Is this normal for this Mac?</h3>
+          <p class="body" data-it="μStats impara da 30 giorni di storia dove sta di solito questo Mac a ogni ora. I grafici mostrano quella fascia, e la riga di stato la cita accanto al valore.">μStats learns from 30 days of history where this Mac usually sits at each hour. Charts draw that range, and the status line quotes it beside the reading.</p>
+          <p class="say"><b data-it="Pressione memoria 88%">Memory pressure 88%</b> <span data-it="di solito 23%">usually 23%</span></p>
+        </div>
+        <span class="shot view"><img class="for-light" loading="lazy" src="shots/light/panel-alert.png" width="380" alt="The panel under load, with the usual value and the app behind the reading" data-it-alt="Il pannello sotto carico, con il valore abituale e l'app responsabile"><img class="for-dark" loading="lazy" src="shots/dark/panel-alert.png" width="380" alt="The panel under load, with the usual value and the app behind the reading" data-it-alt="Il pannello sotto carico, con il valore abituale e l'app responsabile"></span>
+      </article>
     </div>
   </div>
 </section>
 
-<section id="facts">
-  <div class="wrap stack">
-    <p class="eyebrow" data-it="In breve">In short</p>
-    <h2 data-it="I fatti.">The facts.</h2>
-    <table class="facts">
-      <tr><th data-it="Prezzo">Price</th><td data-it="Gratis. Nessun account, nessuna pubblicità.">Free. No account, no ads.</td></tr>
-      <tr><th data-it="Licenza">License</th><td>MIT</td></tr>
-      <tr><th data-it="Requisiti">Requires</th><td data-it="macOS 14 (Sonoma) o successivo. Apple silicon e Intel.">macOS 14 (Sonoma) or later. Apple silicon and Intel.</td></tr>
-      <tr><th data-it="Costo per il Mac">Cost to your Mac</th><td data-it="Meno dell'1% di un core in media e circa 23 MB di memoria a pannello chiuso, misurati su un M4 Pro.">Under 1% of one core on average and about 23 MB of memory with the panel closed, measured on an M4 Pro.</td></tr>
-      <tr><th data-it="I tuoi dati">Your data</th><td data-it="Restano sul Mac. Nessuna statistica d'uso. L'app cerca gli aggiornamenti su GitHub e, con i dettagli di Rete aperti, misura la latenza verso Apple. La ricerca dell'IP pubblico è spenta di default.">They stay on your Mac. No analytics. The app looks for updates on GitHub and, with the Network details open, times a request to Apple. The public IP lookup is off by default.</td></tr>
-      <tr><th data-it="Lingue">Languages</th><td data-it="Inglese e italiano">English and Italian</td></tr>
-      <tr><th data-it="Aggiornamenti">Updates</th><td data-it="Dentro l'app, verificati con la chiave del progetto.">Inside the app, verified with the project's signing key.</td></tr>
-    </table>
+<section id="views">
+  <div class="wrap">
+    <p class="label" data-it="Le viste">The views</p>
+    <h2 style="max-width:18ch; margin-top:14px" data-it="Costruito per stare nella barra dei menu.">Built to live in the menu bar.</h2>
+    <div class="tiles">
+      <article class="tile wide">
+        <p class="label" data-it="Barra dei menu">Menu bar</p>
+        <h3 data-it="17 metriche, nello stile che preferisci">17 metrics, in the style you prefer</h3>
+        <p class="body" data-it="Anelli, barre, testo, grafici e indicatori, in un elemento o in più elementi. Sei serie di colori per gli anelli, oppure i tuoi colori.">Rings, bars, text, graphs and indicators, in one item or several. Six colour sets for the rings, or your own colours.</p>
+        <div class="strips"><span class="shot"><img class="for-light" loading="lazy" src="shots/light/menubar-base.png" width="162" alt="CPU, memory and disk bars, temperature and network" data-it-alt="Barre di CPU, memoria e disco, temperatura e rete"><img class="for-dark" loading="lazy" src="shots/dark/menubar-base.png" width="162" alt="CPU, memory and disk bars, temperature and network" data-it-alt="Barre di CPU, memoria e disco, temperatura e rete"></span> <span class="shot"><img class="for-light" loading="lazy" src="shots/light/menubar-rings.png" width="194" alt="Rings next to temperature and network" data-it-alt="Anelli accanto a temperatura e rete"><img class="for-dark" loading="lazy" src="shots/dark/menubar-rings.png" width="194" alt="Rings next to temperature and network" data-it-alt="Anelli accanto a temperatura e rete"></span> <span class="shot"><img class="for-light" loading="lazy" src="shots/light/menubar-graphs.png" width="268" alt="Graphs, mini graphs and status dots" data-it-alt="Grafici, mini grafici e indicatori di stato"><img class="for-dark" loading="lazy" src="shots/dark/menubar-graphs.png" width="268" alt="Graphs, mini graphs and status dots" data-it-alt="Grafici, mini grafici e indicatori di stato"></span> <span class="shot"><img class="for-light" loading="lazy" src="shots/light/menubar-icons.png" width="347" alt="Icons with text and the battery indicator" data-it-alt="Icone con testo e indicatore della batteria"><img class="for-dark" loading="lazy" src="shots/dark/menubar-icons.png" width="347" alt="Icons with text and the battery indicator" data-it-alt="Icone con testo e indicatore della batteria"></span></div>
+      </article>
+      <article class="tile">
+        <p class="label">Chip</p>
+        <h3 data-it="Il processore, acceso dal carico reale">The processor, lit by its real load</h3>
+        <p class="body" data-it="Il die con i suoi core, la GPU e i moduli di memoria accanto. Ogni core si accende con il suo carico.">The die with its cores, the GPU and the memory modules beside it. Every core glows with its own load.</p>
+        <span class="shot view whole"><img class="for-light" loading="lazy" src="shots/light/panel-chip-load.png" width="380" alt="Chip view under load: every core lit, memory modules almost full" data-it-alt="Vista Chip sotto carico: tutti i core accesi, moduli di memoria quasi pieni"><img class="for-dark" loading="lazy" src="shots/dark/panel-chip-load.png" width="380" alt="Chip view under load: every core lit, memory modules almost full" data-it-alt="Vista Chip sotto carico: tutti i core accesi, moduli di memoria quasi pieni"></span>
+      </article>
+      <article class="tile">
+        <p class="label" data-it="Oggi">Today</p>
+        <h3 data-it="Le ultime 24 ore, con i momenti notevoli">The last 24 hours, with the notable moments</h3>
+        <p class="body" data-it="Trascina sul grafico per vedere quel minuto e l'app in cima.">Drag across the chart to see that minute and the app on top.</p>
+        <span class="shot view whole"><img class="for-light" loading="lazy" src="shots/light/panel-today.png" width="380" alt="Today view: CPU over the last 24 hours with one event marked" data-it-alt="Vista Oggi: CPU nelle ultime 24 ore con un evento segnato"><img class="for-dark" loading="lazy" src="shots/dark/panel-today.png" width="380" alt="Today view: CPU over the last 24 hours with one event marked" data-it-alt="Vista Oggi: CPU nelle ultime 24 ore con un evento segnato"></span>
+      </article>
+      <article class="tile">
+        <p class="label" data-it="Pannello">Panel</p>
+        <h3 data-it="Il dettaglio a un clic">Detail one click away</h3>
+        <ul>
+          <li data-it="Se una lettura è in allarme, il pannello si apre su quel modulo.">If a reading is in alert, the panel opens on that module.</li>
+          <li data-it="Storia da 5 minuti a 30 giorni.">History from 5 minutes to 30 days.</li>
+          <li data-it="Previsione: tra quanti giorni il disco sarà pieno.">Forecast: how many days until the disk is full.</li>
+        </ul>
+        <span class="shot view"><img class="for-light" loading="lazy" src="shots/light/panel-now.png" width="380" alt="The panel with every module closed" data-it-alt="Il pannello con tutti i moduli chiusi"><img class="for-dark" loading="lazy" src="shots/dark/panel-now.png" width="380" alt="The panel with every module closed" data-it-alt="Il pannello con tutti i moduli chiusi"></span>
+      </article>
+      <article class="tile">
+        <p class="label" data-it="E inoltre">And also</p>
+        <h3 data-it="Widget, avvisi e riga di comando">Widgets, alerts and a command line</h3>
+        <ul>
+          <li data-it="Widget per la scrivania in tre misure.">Desktop widgets in three sizes.</li>
+          <li data-it="Avvisi per CPU, memoria, temperatura, batteria e disco, solo quando la condizione dura.">Alerts for CPU, memory, temperature, battery and disk, only when a condition lasts.</li>
+          <li data-it="Confronto prima e dopo un aggiornamento di macOS.">A comparison of before and after a macOS update.</li>
+          <li><code>mustats status</code>, <code>mustats top</code>, <span data-it="output JSON per gli script.">JSON output for scripts.</span></li>
+        </ul>
+        <div class="term" role="img" aria-label="Output of mustats status"><b>$ mustats status</b>
+CPU         19%  load 4.29
+Memory      20 GB of 24 GB  pressure 59%
+GPU         24%  Apple M4 Pro
+Disk        398 GB free of 995 GB
+Network     ↓ 391 KB/s  ↑ 14 KB/s  Ethernet
+Battery     100%  on power
+Temperature CPU 55°C  GPU 47°C  fan 2334 RPM</div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="statement" id="facts">
+  <div class="wrap">
+    <h2 data-it="μStats è fatto per costare quasi nulla al tuo Mac, e per non chiederti nulla.">μStats is built to cost your Mac next to nothing, and to ask nothing of you.</h2>
+    <div class="facts">
+      <div class="fact"><p class="label" data-it="Costo per il Mac">Cost to your Mac</p><p data-it="Meno dell'1% di un core in media e circa 23 MB di memoria a pannello chiuso, misurati su un M4 Pro.">Under 1% of one core on average and about 23 MB of memory with the panel closed, measured on an M4 Pro.</p></div>
+      <div class="fact"><p class="label" data-it="Prezzo">Price</p><p data-it="Gratis. Nessun account, nessuna pubblicità. Licenza MIT.">Free. No account, no ads. MIT license.</p></div>
+      <div class="fact"><p class="label" data-it="I tuoi dati">Your data</p><p data-it="Restano sul Mac. Nessuna statistica d'uso. L'app cerca gli aggiornamenti su GitHub e, con i dettagli di Rete aperti, misura la latenza verso Apple. La ricerca dell'IP pubblico è spenta di default.">They stay on your Mac. No analytics. The app looks for updates on GitHub and, with the Network details open, times a request to Apple. The public IP lookup is off by default.</p></div>
+      <div class="fact"><p class="label" data-it="Requisiti">Requires</p><p data-it="macOS 14 (Sonoma) o successivo. Apple silicon e Intel.">macOS 14 (Sonoma) or later. Apple silicon and Intel.</p></div>
+      <div class="fact"><p class="label" data-it="Aggiornamenti">Updates</p><p data-it="Dentro l'app, verificati con la chiave del progetto.">Inside the app, verified with the project's signing key.</p></div>
+      <div class="fact"><p class="label" data-it="Lingue">Languages</p><p data-it="Inglese e italiano.">English and Italian.</p></div>
+    </div>
   </div>
 </section>
 
 <section id="install">
-  <div class="wrap stack">
-    <p class="eyebrow" data-it="Installa">Install</p>
-    <h2 data-it="Due modi. Scegline uno.">Two ways. Pick one.</h2>
-    <div class="cols" style="margin-top:14px">
-      <div class="card">
-        <h3>Homebrew</h3>
-        <p data-it="Il modo più semplice. Homebrew toglie anche il blocco al primo avvio.">The simplest way. Homebrew also removes the first-launch block.</p>
+  <div class="wrap">
+    <p class="label" data-it="Installa">Install</p>
+    <h2 style="margin-top:14px" data-it="Due modi. Scegline uno.">Two ways. Pick one.</h2>
+    <div class="tiles">
+      <article class="tile">
+        <p class="label">Homebrew</p>
+        <h3 data-it="Un comando">One command</h3>
+        <p class="body" data-it="Il modo più semplice. Homebrew toglie anche il blocco al primo avvio.">The simplest way. Homebrew also removes the first-launch block.</p>
         <pre>brew install --cask danesed/tap/mustats</pre>
-      </div>
-      <div class="card">
-        <h3 data-it="Download diretto">Direct download</h3>
+      </article>
+      <article class="tile">
+        <p class="label" data-it="Download diretto">Direct download</p>
+        <h3 data-it="Tre passi">Three steps</h3>
         <ol class="steps">
           <li><span><span data-it="Scarica">Download</span> <a href="https://github.com/Danesed/muStats/releases/latest/download/muStats.dmg">muStats.dmg</a>.</span></li>
           <li><span data-it="Apri il file e trascina μStats in Applicazioni.">Open it and drag μStats to Applications.</span></li>
           <li><span data-it="Apri μStats una volta. Poi vai in Impostazioni di Sistema > Privacy e sicurezza e fai clic su Apri comunque.">Open μStats once. Then go to System Settings &gt; Privacy &amp; Security and click Open Anyway.</span></li>
         </ol>
         <p class="fine" data-it="Il passo 3 serve perché μStats non ha ancora la notarizzazione Apple.">Step 3 is needed because μStats is not notarized by Apple yet.</p>
-      </div>
+      </article>
     </div>
   </div>
 </section>
 
 <section id="faq">
-  <div class="wrap stack">
-    <p class="eyebrow">FAQ</p>
-    <h2 data-it="Domande frequenti.">Questions.</h2>
-    <div>
+  <div class="wrap">
+    <h2 style="text-align:center" data-it="Domande frequenti">Questions</h2>
+    <div class="faq">
       <details><summary data-it="È davvero gratis?">Is it really free?</summary><p data-it="Sì. Tutte le funzioni sono gratis e il codice è aperto con licenza MIT. Se vuoi, puoi sostenere il progetto con una stella o una donazione.">Yes. Every feature is free and the source is open under the MIT license. If you want, you can support the project with a star or a donation.</p></details>
       <details><summary data-it="Quanto pesa sul Mac?">How much does it cost my Mac?</summary><p data-it="Meno dell'1% di un core in media e circa 23 MB a pannello chiuso, su un M4 Pro. μStats legge meno spesso quando il Mac è calmo, quando la barra dei menu è coperta e in modalità Risparmio energia. I test del progetto falliscono se un percorso critico supera il suo tempo massimo.">Under 1% of one core on average and about 23 MB with the panel closed, on an M4 Pro. μStats reads less often when the Mac is calm, when the menu bar is covered and in Low Power Mode. The project's tests fail if a hot path goes over its time budget.</p></details>
       <details><summary data-it="Funziona sui Mac Intel?">Does it work on Intel Macs?</summary><p data-it="Il download contiene il codice per Apple silicon e per Intel. La versione Intel non è ancora stata provata su un vero Mac Intel: se la provi, apri una segnalazione su GitHub e racconta com'è andata.">The download contains code for Apple silicon and for Intel. The Intel build has not been tested on a real Intel Mac yet: if you try it, open an issue on GitHub and say how it went.</p></details>
@@ -293,15 +392,17 @@
   </div>
 </section>
 
-<section id="support" class="support">
-  <div class="wrap stack">
-    <p class="eyebrow" data-it="Sostieni μStats">Support μStats</p>
-    <h2 data-it="Gratis per sempre. Una stella aiuta altri a trovarlo.">Free for good. A star helps others find it.</h2>
-    <p class="lead" data-it="μStats è sviluppato nel tempo libero. Il modo più semplice per aiutare non costa nulla: una stella su GitHub.">μStats is built in spare time. The simplest way to help costs nothing: a star on GitHub.</p>
-    <div class="actions">
-      <a class="btn primary" href="https://github.com/Danesed/muStats" rel="noopener">★ <span data-it="Metti una stella su GitHub">Star on GitHub</span></a>
-      <span id="donate" class="actions" hidden></span>
-      <a class="btn" href="https://github.com/Danesed/muStats/issues" rel="noopener" data-it="Segnala un problema">Report a problem</a>
+<section id="support">
+  <div class="wrap">
+    <div class="support">
+      <p class="label" data-it="Sostieni μStats">Support μStats</p>
+      <h2 style="max-width:18ch" data-it="Gratis per sempre. Una stella aiuta altri a trovarlo.">Free for good. A star helps others find it.</h2>
+      <p class="body" data-it="μStats è sviluppato nel tempo libero. Il modo più semplice per aiutare non costa nulla: una stella su GitHub.">μStats is built in spare time. The simplest way to help costs nothing: a star on GitHub.</p>
+      <div class="actions">
+        <a class="pill solid" href="https://github.com/Danesed/muStats" rel="noopener">★ <span data-it="Metti una stella su GitHub">Star on GitHub</span></a>
+        <span id="donate" class="actions" hidden></span>
+        <a class="pill" href="https://github.com/Danesed/muStats/issues" rel="noopener" data-it="Segnala un problema">Report a problem</a>
+      </div>
     </div>
   </div>
 </section>
@@ -309,18 +410,18 @@
 
 <footer>
   <div class="wrap">
-    <span>μStats · MIT</span>
+    <span class="mark">μStats</span>
     <a href="https://github.com/Danesed/muStats">GitHub</a>
     <a href="https://github.com/Danesed/muStats/releases" data-it="Versioni">Releases</a>
     <a href="https://github.com/Danesed/muStats/blob/main/CHANGELOG.md" data-it="Novità">Changelog</a>
-    <a href="https://github.com/Danesed/muStats/blob/main/LICENSE" data-it="Licenza">License</a>
+    <a href="https://github.com/Danesed/muStats/blob/main/LICENSE" data-it="Licenza MIT">MIT License</a>
   </div>
 </footer>
 
 <div class="toast" id="toast" role="status" aria-live="polite">
   <p data-it="Grazie per il download. Se μStats si guadagna un posto nella tua barra dei menu, una stella aiuta altri a trovarlo.">Thanks for downloading. If μStats earns a place in your menu bar, a star helps others find it.</p>
-  <a class="btn" href="https://github.com/Danesed/muStats" rel="noopener">★ <span data-it="Stella">Star</span></a>
-  <button class="copy" type="button" id="toast-close" data-it="Più tardi">Later</button>
+  <a class="pill small solid" href="https://github.com/Danesed/muStats" rel="noopener">★ <span data-it="Stella">Star</span></a>
+  <button class="pill small" type="button" id="toast-close" data-it="Più tardi">Later</button>
 </div>
 
 <script>
@@ -331,37 +432,46 @@ const SUPPORT = {
   "PayPal": ""             // e.g. https://paypal.me/yourname
 };
 const REPO = "Danesed/muStats";
+const root = document.documentElement;
 
 // Donations
 const donate = document.getElementById("donate");
 for (const [name, url] of Object.entries(SUPPORT)) {
   if (!url) continue;
   const a = document.createElement("a");
-  a.className = "btn"; a.href = url; a.rel = "noopener"; a.textContent = "♥ " + name;
+  a.className = "pill"; a.href = url; a.rel = "noopener"; a.textContent = "♥ " + name;
   donate.appendChild(a); donate.hidden = false;
 }
+
+// Theme: the switch flips it and remembers it. The pictures of the app follow.
+document.getElementById("theme").addEventListener("click", () => {
+  root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
+  try { localStorage.setItem("theme", root.dataset.theme); } catch (e) {}
+});
 
 // Language: Italian for Italian browsers, English otherwise, and the reader's choice after that.
 const texts = [...document.querySelectorAll("[data-it]")].map(el => ({ el, en: el.innerHTML, it: el.dataset.it }));
 const alts = [...document.querySelectorAll("[data-it-alt]")].map(el => ({ el, en: el.alt, it: el.dataset.itAlt }));
-const button = document.getElementById("lang");
+const labels = [...document.querySelectorAll("[data-it-label]")].map(el => ({ el, en: el.getAttribute("aria-label"), it: el.dataset.itLabel }));
+const langButton = document.getElementById("lang");
 function setLanguage(lang) {
   for (const t of texts) t.el.innerHTML = lang === "it" ? t.it : t.en;
   for (const a of alts) a.el.alt = lang === "it" ? a.it : a.en;
-  document.documentElement.lang = lang;
-  button.textContent = lang === "it" ? "EN" : "IT";
+  for (const l of labels) l.el.setAttribute("aria-label", lang === "it" ? l.it : l.en);
+  root.lang = lang;
+  langButton.textContent = lang === "it" ? "EN" : "IT";
   try { localStorage.setItem("lang", lang); } catch (e) {}
 }
 let saved = null;
 try { saved = localStorage.getItem("lang"); } catch (e) {}
 setLanguage(saved || ((navigator.language || "en").toLowerCase().startsWith("it") ? "it" : "en"));
-button.addEventListener("click", () => setLanguage(document.documentElement.lang === "it" ? "en" : "it"));
+langButton.addEventListener("click", () => setLanguage(root.lang === "it" ? "en" : "it"));
 
 // Copy buttons
 for (const b of document.querySelectorAll("[data-copy]")) {
   b.addEventListener("click", async () => {
     const text = document.getElementById(b.dataset.copy).textContent;
-    try { await navigator.clipboard.writeText(text); b.textContent = "✓"; setTimeout(() => setLanguage(document.documentElement.lang), 1200); } catch (e) {}
+    try { await navigator.clipboard.writeText(text); b.textContent = "✓"; setTimeout(() => setLanguage(root.lang), 1200); } catch (e) {}
   });
 }
 
@@ -373,15 +483,17 @@ for (const a of document.querySelectorAll('a[href$="muStats.dmg"]')) {
 document.getElementById("toast-close").addEventListener("click", () => toast.classList.remove("on"));
 
 // Star count and version, from GitHub. The page is complete without them.
-fetch("https://api.github.com/repos/" + REPO).then(r => r.ok ? r.json() : null).then(d => {
-  if (!d || !d.stargazers_count) return;
-  const s = document.getElementById("stars");
-  s.textContent = d.stargazers_count >= 1000 ? (d.stargazers_count / 1000).toFixed(1) + "k" : d.stargazers_count;
-  s.hidden = false;
-}).catch(() => {});
-fetch("https://api.github.com/repos/" + REPO + "/releases/latest").then(r => r.ok ? r.json() : null).then(d => {
-  if (d && d.tag_name) document.getElementById("version").textContent = d.tag_name;
-}).catch(() => {});
+if (!root.classList.contains("shot")) {
+  fetch("https://api.github.com/repos/" + REPO).then(r => r.ok ? r.json() : null).then(d => {
+    if (!d || !d.stargazers_count) return;
+    const s = document.getElementById("stars");
+    s.textContent = d.stargazers_count >= 1000 ? (d.stargazers_count / 1000).toFixed(1) + "k" : d.stargazers_count;
+    s.hidden = false;
+  }).catch(() => {});
+  fetch("https://api.github.com/repos/" + REPO + "/releases/latest").then(r => r.ok ? r.json() : null).then(d => {
+    if (d && d.tag_name) document.getElementById("version").textContent = d.tag_name;
+  }).catch(() => {});
+}
 </script>
 </body>
 </html>

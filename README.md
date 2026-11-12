@@ -13,7 +13,10 @@ A lightweight system monitor for the Mac menu bar.
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 ![Status: alpha](https://img.shields.io/badge/status-alpha-yellow)
 
-<img src="docs/screenshots/hero.png" alt="μStats: rings in the menu bar and the panel with the Now, Today and Chip views" width="880">
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/hero-light.png">
+  <img src="docs/screenshots/hero.png" alt="μStats: rings in the menu bar and the panel with the Now, Today and Chip views" width="880">
+</picture>
 
 </div>
 

@@ -1,6 +1,6 @@
 #!/bin/bash
-# Assembles the website into a folder: the page from site/, the icon and the
-# screenshots from docs/.
+# Assembles the website into a folder: the page and its pictures of the app from
+# site/, the icon and the picture link previews use from docs/.
 #
 #   Scripts/site.sh            → _site/
 #   Scripts/site.sh <folder>   → that folder
@@ -15,7 +15,7 @@ rm -rf "$OUT"
 mkdir -p "$OUT/assets"
 cp -R site/. "$OUT/"
 cp docs/icon.png "$OUT/assets/icon.png"
-cp -R docs/screenshots "$OUT/assets/screenshots"
+cp docs/screenshots/hero.png "$OUT/assets/hero.png"
 # Stops GitHub Pages from running the folder through Jekyll.
 touch "$OUT/.nojekyll"
 

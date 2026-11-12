@@ -1,14 +1,15 @@
 name: Site
 
-# Publishes site/ to GitHub Pages. The screenshots stay in docs/, where the README
-# reads them, and are copied beside the page here so there is one copy to keep fresh.
+# Publishes site/ to GitHub Pages, with the icon and the link-preview picture from
+# docs/. Scripts/site-shots.sh renders the pictures of the app the page shows.
 on:
   push:
     branches: [main]
     paths:
       - "site/**"
       - "docs/icon.png"
-      - "docs/screenshots/**"
+      - "docs/screenshots/hero.png"
+      - "Scripts/site.sh"
       - ".github/workflows/site.yml"
   workflow_dispatch:
 
