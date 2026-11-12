@@ -33,3 +33,6 @@ docs/GUIDA-PUBBLICAZIONE.md
 node_modules/
 package.json
 package-lock.json
+
+# Output of Scripts/site.sh.
+_site/

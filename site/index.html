@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>μStats: a lightweight system monitor for the Mac menu bar</title>
+<meta name="description" content="μStats shows CPU, memory, GPU, network, disk, battery and temperature in the Mac menu bar. It names the app behind a high reading and knows what is usual for your Mac. Free and open source.">
+<meta property="og:title" content="μStats">
+<meta property="og:description" content="A lightweight system monitor for the Mac menu bar. Free and open source.">
+<meta property="og:image" content="https://danesed.github.io/muStats/assets/screenshots/hero.png">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="assets/icon.png">
+<style>
+  /* Dark first: the app lives in the menu bar and its panel is dark glass. */
+  :root {
+    --bg: #101113; --bg-raised: #17191c; --line: #26292e; --fg: #f2f3f5; --fg-2: #a6abb3; --fg-3: #6d737c;
+    --accent: #5aa9ff; --accent-ink: #06121f; --calm: #34c759; --warn: #ff9f0a; --alert: #ff453a;
+    --radius: 14px; --wrap: 1080px;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f6f6f4; --bg-raised: #ffffff; --line: #e1e1dc; --fg: #15161a; --fg-2: #50555e; --fg-3: #858a93;
+      --accent: #0a66d8; --accent-ink: #ffffff; color-scheme: light;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.55 var(--sans); -webkit-font-smoothing: antialiased; }
+  img { max-width: 100%; height: auto; display: block; }
+  a { color: inherit; }
+  .wrap { max-width: var(--wrap); margin: 0 auto; padding-inline: max(20px, env(safe-area-inset-left)) max(20px, env(safe-area-inset-right)); }
+  h1, h2, h3 { text-wrap: balance; line-height: 1.12; margin: 0; letter-spacing: -0.02em; }
+  h1 { font-size: clamp(2.3rem, 6vw, 4rem); font-weight: 700; }
+  h2 { font-size: clamp(1.6rem, 3.6vw, 2.3rem); font-weight: 650; }
+  h3 { font-size: 1.05rem; font-weight: 600; letter-spacing: -0.01em; }
+  p { margin: 0; }
+  .lead { color: var(--fg-2); font-size: clamp(1.05rem, 2vw, 1.25rem); max-width: 60ch; }
+  .eyebrow { font: 600 0.72rem/1 var(--sans); letter-spacing: 0.09em; text-transform: uppercase; color: var(--fg-3); }
+  section { padding-block: clamp(56px, 9vw, 104px); border-top: 1px solid var(--line); }
+  .stack { display: grid; gap: 18px; }
+
+  /* Header */
+  header { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-bottom: 1px solid var(--line); }
+  .bar { display: flex; align-items: center; gap: 20px; height: 56px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; text-decoration: none; margin-right: auto; }
+  .brand img { width: 26px; height: 26px; }
+  nav { display: flex; gap: 20px; font-size: 0.92rem; }
+  nav a { color: var(--fg-2); text-decoration: none; }
+  nav a:hover { color: var(--fg); }
+  .lang { font: 600 0.75rem var(--sans); color: var(--fg-2); background: none; border: 1px solid var(--line); border-radius: 8px; padding: 5px 9px; cursor: pointer; }
+  @media (max-width: 720px) { nav { display: none; } }
+
+  /* Buttons */
+  .btn { display: inline-flex; align-items: center; gap: 9px; padding: 12px 20px; border-radius: 11px; font-weight: 600; text-decoration: none; border: 1px solid var(--line); background: var(--bg-raised); cursor: pointer; font-size: 1rem; color: var(--fg); }
+  .btn:hover { border-color: var(--fg-3); }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .btn small { font-weight: 500; opacity: 0.8; }
+  .count { font: 600 0.85rem var(--mono); padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--fg) 10%, transparent); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+
+  /* Hero */
+  .hero { padding-block: clamp(48px, 8vw, 96px) 0; border-top: 0; text-align: center; }
+  .hero .stack { justify-items: center; gap: 22px; }
+  .status { display: inline-flex; align-items: center; gap: 9px; font: 500 0.9rem var(--sans); color: var(--fg-2); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; background: var(--bg-raised); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--calm); }
+  .actions { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+  .brew { display: inline-flex; align-items: center; gap: 12px; font: 0.88rem var(--mono); color: var(--fg-2); border: 1px solid var(--line); border-radius: 10px; padding: 9px 9px 9px 14px; background: var(--bg-raised); max-width: 100%; overflow-x: auto; white-space: nowrap; }
+  .copy { font: 600 0.75rem var(--sans); color: var(--fg-2); background: none; border: 1px solid var(--line); border-radius: 7px; padding: 4px 9px; cursor: pointer; }
+  .fine { color: var(--fg-3); font-size: 0.85rem; }
+  .shot { margin-top: clamp(28px, 5vw, 56px); border-radius: var(--radius) var(--radius) 0 0; overflow: hidden; border: 1px solid var(--line); border-bottom: 0; }
+
+  /* Three questions */
+  .cols { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+  .card { background: var(--bg-raised); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; display: grid; gap: 10px; align-content: start; grid-template-rows: auto 1fr auto; min-width: 0; }
+  .card p { color: var(--fg-2); font-size: 0.96rem; }
+  .q { display: flex; align-items: center; gap: 9px; }
+  .q i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .line { font: 0.8rem/1.45 var(--mono); color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 9px; padding: 9px 12px; overflow-wrap: anywhere; align-self: end; }
+  .line b { font-weight: 600; } .line span { color: var(--fg-3); }
+
+  /* Feature rows */
+  .feature { display: grid; gap: clamp(20px, 4vw, 48px); grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; margin-top: clamp(32px, 6vw, 64px); }
+  .feature.flip > :first-child { order: 2; }
+  .feature .frame { background: #0c0d0f; border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; display: grid; place-items: center; gap: 12px; }
+  .feature .frame img { border-radius: 10px; }
+  .feature ul { margin: 0; padding-left: 1.1em; color: var(--fg-2); display: grid; gap: 6px; font-size: 0.96rem; }
+  @media (max-width: 760px) { .feature { grid-template-columns: 1fr; } .feature.flip > :first-child { order: 0; } }
+  .strip { display: grid; gap: 10px; justify-items: center; }
+  .strip img { height: 30px; width: auto; border-radius: 6px; }
+
+  /* Facts */
+  .facts { width: 100%; border-collapse: collapse; font-size: 0.96rem; }
+  .facts th, .facts td { text-align: left; padding: 12px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .facts th { color: var(--fg-3); font-weight: 500; width: 34%; padding-right: 16px; }
+  .facts td { font-variant-numeric: tabular-nums; }
+
+  /* Install */
+  .steps { counter-reset: step; display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
+  .steps li { counter-increment: step; display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px; color: var(--fg-2); }
+  .steps li::before { content: counter(step); font: 600 0.8rem var(--mono); color: var(--fg); width: 26px; height: 26px; border: 1px solid var(--line); border-radius: 50%; display: grid; place-items: center; }
+  code { font: 0.86em var(--mono); background: var(--bg-raised); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; }
+  pre { margin: 8px 0 0; font: 0.84rem var(--mono); background: var(--bg-raised); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; overflow-x: auto; color: var(--fg); }
+
+  details { border-bottom: 1px solid var(--line); padding: 16px 0; }
+  summary { cursor: pointer; font-weight: 600; list-style: none; display: flex; justify-content: space-between; gap: 16px; }
+  summary::after { content: "+"; color: var(--fg-3); font-weight: 400; }
+  details[open] summary::after { content: "−"; }
+  details p { color: var(--fg-2); margin-top: 10px; max-width: 68ch; }
+
+  .support { text-align: center; }
+  .support .stack { justify-items: center; }
+  footer { border-top: 1px solid var(--line); padding-block: 28px; color: var(--fg-3); font-size: 0.86rem; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center; }
+  footer a { color: var(--fg-2); text-decoration: none; } footer a:hover { color: var(--fg); }
+
+  .toast { position: fixed; left: 50%; bottom: 22px; transform: translate(-50%, 140%); transition: transform .35s ease; background: var(--bg-raised); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; box-shadow: 0 18px 50px rgba(0,0,0,.35); width: min(560px, calc(100vw - 32px)); z-index: 10; font-size: 0.94rem; }
+  .toast.on { transform: translate(-50%, 0); }
+  .toast p { flex: 1 1 240px; color: var(--fg-2); }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .toast { transition: none; } }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap bar">
+    <a class="brand" href="#top"><img src="assets/icon.png" alt="">μStats</a>
+    <nav aria-label="Sections">
+      <a href="#answers" data-it="Cosa fa">What it does</a>
+      <a href="#install" data-it="Installa">Install</a>
+      <a href="#faq" data-it="Domande">FAQ</a>
+      <a href="#support" data-it="Sostieni">Support</a>
+      <a href="https://github.com/Danesed/muStats">GitHub</a>
+    </nav>
+    <button class="lang" id="lang" type="button" aria-label="Language">IT</button>
+  </div>
+</header>
+
+<main id="top">
+<section class="hero">
+  <div class="wrap stack">
+    <span class="status"><i class="dot"></i><span data-it="Tutto nella norma">Everything looks normal</span></span>
+    <h1 data-it="Il tuo Mac, in un colpo d'occhio.">Your Mac, in one glance.</h1>
+    <p class="lead" data-it="μStats è un monitor di sistema leggero per la barra dei menu. Dice se tutto va bene, quale app è la causa quando non va bene, e cosa è normale per questo Mac a quest'ora.">μStats is a lightweight system monitor for the menu bar. It tells you if all is well, which app is the cause when it is not, and what is usual for this Mac at this hour.</p>
+    <div class="actions">
+      <a class="btn primary" id="download" href="https://github.com/Danesed/muStats/releases/latest/download/muStats.dmg"><span data-it="Scarica per macOS">Download for macOS</span> <small id="version"></small></a>
+      <a class="btn" href="https://github.com/Danesed/muStats" rel="noopener">★ <span data-it="Metti una stella su GitHub">Star on GitHub</span> <span class="count" id="stars" hidden></span></a>
+    </div>
+    <div class="brew"><span id="brewcmd">brew install --cask danesed/tap/mustats</span><button class="copy" type="button" data-copy="brewcmd" data-it="Copia">Copy</button></div>
+    <p class="fine" data-it="Gratis e open source (MIT). macOS 14 o successivo, Apple silicon e Intel.">Free and open source (MIT). macOS 14 or later, Apple silicon and Intel.</p>
+  </div>
+  <div class="wrap"><div class="shot"><img src="assets/screenshots/hero.png" width="1940" height="1480" alt="μStats: rings in the menu bar and the panel with the Now, Today and Chip views" data-it-alt="μStats: anelli nella barra dei menu e il pannello con le viste Adesso, Oggi e Chip"></div></div>
+</section>
+
+<section id="answers">
+  <div class="wrap stack">
+    <p class="eyebrow" data-it="Tre domande, un secondo">Three questions, one second</p>
+    <h2 data-it="Un monitor mostra numeri. μStats dà risposte.">A monitor shows numbers. μStats gives answers.</h2>
+    <div class="cols" style="margin-top:14px">
+      <div class="card">
+        <h3 class="q"><i style="background:var(--calm)"></i><span data-it="Va tutto bene?">Is all well?</span></h3>
+        <p data-it="La prima riga del pannello lo dice a parole. Quando una riga richiede attenzione, le altre si attenuano.">The first line of the panel says so in words. When one row needs attention, the others step back.</p>
+        <div class="line"><b data-it="Tutto nella norma">Everything looks normal</b></div>
+      </div>
+      <div class="card">
+        <h3 class="q"><i style="background:var(--alert)"></i><span data-it="Di chi è la colpa?">Who is to blame?</span></h3>
+        <p data-it="μStats somma tutti i processi di un'app. Quaranta helper del browser diventano una riga, con CPU, memoria ed energia.">μStats adds up every process of an app. Forty browser helpers become one row, with CPU, memory and energy.</p>
+        <div class="line"><b data-it="Pressione memoria 88%">Memory pressure 88%</b> <span data-it="di solito 23%">usually 23%</span> &nbsp;Google Chrome 8.2 GB</div>
+      </div>
+      <div class="card">
+        <h3 class="q"><i style="background:var(--accent)"></i><span data-it="È normale per questo Mac?">Is this normal for this Mac?</span></h3>
+        <p data-it="μStats impara da 30 giorni di storia dove sta di solito questo Mac a ogni ora. I grafici mostrano quella fascia.">μStats learns from 30 days of history where this Mac usually sits at each hour. Charts draw that range.</p>
+        <div class="line"><b data-it="CPU insolitamente occupata">CPU is unusually busy</b> <span data-it="58%, di solito 12%">58%, usually 12%</span></div>
+      </div>
+    </div>
+
+    <div class="feature">
+      <div class="stack">
+        <p class="eyebrow" data-it="Barra dei menu">Menu bar</p>
+        <h2 data-it="17 metriche, nello stile che preferisci.">17 metrics, in the style you prefer.</h2>
+        <ul>
+          <li data-it="Anelli, barre, testo, grafici e indicatori, in un elemento o in più elementi.">Rings, bars, text, graphs and indicators, in one item or several.</li>
+          <li data-it="Sei serie di colori per gli anelli, oppure i tuoi colori.">Six colour sets for the rings, or your own colours.</li>
+          <li data-it="Widget per la scrivania in tre misure.">Desktop widgets in three sizes.</li>
+        </ul>
+      </div>
+      <div class="frame strip">
+        <img src="assets/screenshots/menubar-base.png" alt="CPU, memory and disk bars, temperature and network">
+        <img src="assets/screenshots/menubar-rings.png" alt="Rings next to temperature and network">
+        <img src="assets/screenshots/menubar-graphs.png" alt="Graphs, mini graphs and status dots">
+        <img src="assets/screenshots/menubar-icons.png" alt="Icons with text and the battery indicator">
+      </div>
+    </div>
+
+    <div class="feature flip">
+      <div class="stack">
+        <p class="eyebrow" data-it="Pannello">Panel</p>
+        <h2 data-it="Il dettaglio a un clic, il colpevole già visibile.">Detail one click away, the cause already on screen.</h2>
+        <ul>
+          <li data-it="Se una lettura è in allarme, il pannello si apre su quel modulo.">If a reading is in alert, the panel opens on that module.</li>
+          <li data-it="Storia da 5 minuti a 30 giorni, con la fascia abituale di questo Mac.">History from 5 minutes to 30 days, with this Mac's usual range.</li>
+          <li data-it="Se ora tutto è calmo, la prima riga dice cosa è successo mentre il pannello era chiuso.">If all is calm now, the first line says what happened while the panel was closed.</li>
+          <li data-it="Previsione: tra quanti giorni il disco sarà pieno.">Forecast: how many days until the disk is full.</li>
+        </ul>
+      </div>
+      <div class="frame"><img src="assets/screenshots/panel-alert.png" width="380" alt="The panel under load, with the app behind the reading named" data-it-alt="Il pannello sotto carico, con il nome dell'app responsabile"></div>
+    </div>
+
+    <div class="feature">
+      <div class="stack">
+        <p class="eyebrow" data-it="App, non processi">Apps, not processes</p>
+        <h2 data-it="Il conto per app.">The bill per app.</h2>
+        <ul>
+          <li data-it="Una riga per app, con tutti i suoi helper sommati.">One row per app, with all of its helpers added up.</li>
+          <li data-it="CPU, memoria ed energia fianco a fianco. Un clic su una colonna ordina la lista.">CPU, memory and energy side by side. A click on a column ranks the list.</li>
+          <li data-it="Chiudi un'app dal menu contestuale della riga.">Quit an app from the row's context menu.</li>
+        </ul>
+      </div>
+      <div class="frame"><img src="assets/screenshots/panel-apps.png" width="380" alt="Top Processes: one row per app with CPU, memory and energy" data-it-alt="Processi principali: una riga per app con CPU, memoria ed energia"></div>
+    </div>
+
+    <div class="feature flip">
+      <div class="stack">
+        <p class="eyebrow" data-it="Oggi">Today</p>
+        <h2 data-it="Le ultime 24 ore, con i momenti notevoli.">The last 24 hours, with the notable moments.</h2>
+        <ul>
+          <li data-it="Trascina sul grafico per vedere quel minuto e il processo in cima.">Drag across the chart to see that minute and the process on top.</li>
+          <li data-it="Vista Chip: il processore disegnato come il suo package, con core, GPU e memoria accesi dal carico reale.">Chip view: the processor drawn as its package, with cores, GPU and memory lit by their real load.</li>
+          <li data-it="Riga di comando: mustats status, mustats top, output JSON.">Command line: <code>mustats status</code>, <code>mustats top</code>, JSON output.</li>
+        </ul>
+      </div>
+      <div class="frame"><img src="assets/screenshots/panel-today.png" width="380" alt="Today view: CPU over the last 24 hours with one event marked" data-it-alt="Vista Oggi: CPU nelle ultime 24 ore con un evento segnato"><img src="assets/screenshots/panel-chip.png" width="380" alt="Chip view: the die with its cores and GPU, and the memory modules beside it" data-it-alt="Vista Chip: il die con core e GPU, e i moduli di memoria accanto"></div>
+    </div>
+  </div>
+</section>
+
+<section id="facts">
+  <div class="wrap stack">
+    <p class="eyebrow" data-it="In breve">In short</p>
+    <h2 data-it="I fatti.">The facts.</h2>
+    <table class="facts">
+      <tr><th data-it="Prezzo">Price</th><td data-it="Gratis. Nessun account, nessuna pubblicità.">Free. No account, no ads.</td></tr>
+      <tr><th data-it="Licenza">License</th><td>MIT</td></tr>
+      <tr><th data-it="Requisiti">Requires</th><td data-it="macOS 14 (Sonoma) o successivo. Apple silicon e Intel.">macOS 14 (Sonoma) or later. Apple silicon and Intel.</td></tr>
+      <tr><th data-it="Costo per il Mac">Cost to your Mac</th><td data-it="Meno dell'1% di un core in media e circa 23 MB di memoria a pannello chiuso, misurati su un M4 Pro.">Under 1% of one core on average and about 23 MB of memory with the panel closed, measured on an M4 Pro.</td></tr>
+      <tr><th data-it="I tuoi dati">Your data</th><td data-it="Restano sul Mac. Nessuna statistica d'uso. L'app cerca gli aggiornamenti su GitHub e, con i dettagli di Rete aperti, misura la latenza verso Apple. La ricerca dell'IP pubblico è spenta di default.">They stay on your Mac. No analytics. The app looks for updates on GitHub and, with the Network details open, times a request to Apple. The public IP lookup is off by default.</td></tr>
+      <tr><th data-it="Lingue">Languages</th><td data-it="Inglese e italiano">English and Italian</td></tr>
+      <tr><th data-it="Aggiornamenti">Updates</th><td data-it="Dentro l'app, verificati con la chiave del progetto.">Inside the app, verified with the project's signing key.</td></tr>
+    </table>
+  </div>
+</section>
+
+<section id="install">
+  <div class="wrap stack">
+    <p class="eyebrow" data-it="Installa">Install</p>
+    <h2 data-it="Due modi. Scegline uno.">Two ways. Pick one.</h2>
+    <div class="cols" style="margin-top:14px">
+      <div class="card">
+        <h3>Homebrew</h3>
+        <p data-it="Il modo più semplice. Homebrew toglie anche il blocco al primo avvio.">The simplest way. Homebrew also removes the first-launch block.</p>
+        <pre>brew install --cask danesed/tap/mustats</pre>
+      </div>
+      <div class="card">
+        <h3 data-it="Download diretto">Direct download</h3>
+        <ol class="steps">
+          <li><span><span data-it="Scarica">Download</span> <a href="https://github.com/Danesed/muStats/releases/latest/download/muStats.dmg">muStats.dmg</a>.</span></li>
+          <li><span data-it="Apri il file e trascina μStats in Applicazioni.">Open it and drag μStats to Applications.</span></li>
+          <li><span data-it="Apri μStats una volta. Poi vai in Impostazioni di Sistema > Privacy e sicurezza e fai clic su Apri comunque.">Open μStats once. Then go to System Settings &gt; Privacy &amp; Security and click Open Anyway.</span></li>
+        </ol>
+        <p class="fine" data-it="Il passo 3 serve perché μStats non ha ancora la notarizzazione Apple.">Step 3 is needed because μStats is not notarized by Apple yet.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap stack">
+    <p class="eyebrow">FAQ</p>
+    <h2 data-it="Domande frequenti.">Questions.</h2>
+    <div>
+      <details><summary data-it="È davvero gratis?">Is it really free?</summary><p data-it="Sì. Tutte le funzioni sono gratis e il codice è aperto con licenza MIT. Se vuoi, puoi sostenere il progetto con una stella o una donazione.">Yes. Every feature is free and the source is open under the MIT license. If you want, you can support the project with a star or a donation.</p></details>
+      <details><summary data-it="Quanto pesa sul Mac?">How much does it cost my Mac?</summary><p data-it="Meno dell'1% di un core in media e circa 23 MB a pannello chiuso, su un M4 Pro. μStats legge meno spesso quando il Mac è calmo, quando la barra dei menu è coperta e in modalità Risparmio energia. I test del progetto falliscono se un percorso critico supera il suo tempo massimo.">Under 1% of one core on average and about 23 MB with the panel closed, on an M4 Pro. μStats reads less often when the Mac is calm, when the menu bar is covered and in Low Power Mode. The project's tests fail if a hot path goes over its time budget.</p></details>
+      <details><summary data-it="Funziona sui Mac Intel?">Does it work on Intel Macs?</summary><p data-it="Il download contiene il codice per Apple silicon e per Intel. La versione Intel non è ancora stata provata su un vero Mac Intel: se la provi, apri una segnalazione su GitHub e racconta com'è andata.">The download contains code for Apple silicon and for Intel. The Intel build has not been tested on a real Intel Mac yet: if you try it, open an issue on GitHub and say how it went.</p></details>
+      <details><summary data-it="Perché macOS blocca il primo avvio?">Why does macOS block the first launch?</summary><p data-it="Perché l'app non ha ancora la notarizzazione Apple. Con Homebrew il blocco non compare. Con il download diretto, segui il passo 3 qui sopra.">Because the app is not notarized by Apple yet. With Homebrew the block does not appear. With the direct download, follow step 3 above.</p></details>
+      <details><summary data-it="Cosa significa «di solito»?">What does "usually" mean?</summary><p data-it="μStats conserva 30 giorni di storia sul tuo Mac. Per ogni ora confronta il valore attuale con la stessa ora dei giorni precedenti. Servono almeno 7 giorni di storia.">μStats keeps 30 days of history on your Mac. For each hour it compares the current reading with the same hour on the earlier days. It needs at least 7 days of history.</p></details>
+      <details><summary data-it="Come lo disinstallo?">How do I uninstall it?</summary><p data-it="Con Homebrew: brew uninstall --cask mustats. Altrimenti esci da μStats e sposta l'app nel Cestino.">With Homebrew: <code>brew uninstall --cask mustats</code>. Otherwise quit μStats and move the app to the Trash.</p></details>
+    </div>
+  </div>
+</section>
+
+<section id="support" class="support">
+  <div class="wrap stack">
+    <p class="eyebrow" data-it="Sostieni μStats">Support μStats</p>
+    <h2 data-it="Gratis per sempre. Una stella aiuta altri a trovarlo.">Free for good. A star helps others find it.</h2>
+    <p class="lead" data-it="μStats è sviluppato nel tempo libero. Il modo più semplice per aiutare non costa nulla: una stella su GitHub.">μStats is built in spare time. The simplest way to help costs nothing: a star on GitHub.</p>
+    <div class="actions">
+      <a class="btn primary" href="https://github.com/Danesed/muStats" rel="noopener">★ <span data-it="Metti una stella su GitHub">Star on GitHub</span></a>
+      <span id="donate" class="actions" hidden></span>
+      <a class="btn" href="https://github.com/Danesed/muStats/issues" rel="noopener" data-it="Segnala un problema">Report a problem</a>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>μStats · MIT</span>
+    <a href="https://github.com/Danesed/muStats">GitHub</a>
+    <a href="https://github.com/Danesed/muStats/releases" data-it="Versioni">Releases</a>
+    <a href="https://github.com/Danesed/muStats/blob/main/CHANGELOG.md" data-it="Novità">Changelog</a>
+    <a href="https://github.com/Danesed/muStats/blob/main/LICENSE" data-it="Licenza">License</a>
+  </div>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite">
+  <p data-it="Grazie per il download. Se μStats si guadagna un posto nella tua barra dei menu, una stella aiuta altri a trovarlo.">Thanks for downloading. If μStats earns a place in your menu bar, a star helps others find it.</p>
+  <a class="btn" href="https://github.com/Danesed/muStats" rel="noopener">★ <span data-it="Stella">Star</span></a>
+  <button class="copy" type="button" id="toast-close" data-it="Più tardi">Later</button>
+</div>
+
+<script>
+// Donation links. Leave a value empty and its button is not shown.
+const SUPPORT = {
+  "GitHub Sponsors": "",   // e.g. https://github.com/sponsors/Danesed
+  "Ko-fi": "",             // e.g. https://ko-fi.com/danesed
+  "PayPal": ""             // e.g. https://paypal.me/yourname
+};
+const REPO = "Danesed/muStats";
+
+// Donations
+const donate = document.getElementById("donate");
+for (const [name, url] of Object.entries(SUPPORT)) {
+  if (!url) continue;
+  const a = document.createElement("a");
+  a.className = "btn"; a.href = url; a.rel = "noopener"; a.textContent = "♥ " + name;
+  donate.appendChild(a); donate.hidden = false;
+}
+
+// Language: Italian for Italian browsers, English otherwise, and the reader's choice after that.
+const texts = [...document.querySelectorAll("[data-it]")].map(el => ({ el, en: el.innerHTML, it: el.dataset.it }));
+const alts = [...document.querySelectorAll("[data-it-alt]")].map(el => ({ el, en: el.alt, it: el.dataset.itAlt }));
+const button = document.getElementById("lang");
+function setLanguage(lang) {
+  for (const t of texts) t.el.innerHTML = lang === "it" ? t.it : t.en;
+  for (const a of alts) a.el.alt = lang === "it" ? a.it : a.en;
+  document.documentElement.lang = lang;
+  button.textContent = lang === "it" ? "EN" : "IT";
+  try { localStorage.setItem("lang", lang); } catch (e) {}
+}
+let saved = null;
+try { saved = localStorage.getItem("lang"); } catch (e) {}
+setLanguage(saved || ((navigator.language || "en").toLowerCase().startsWith("it") ? "it" : "en"));
+button.addEventListener("click", () => setLanguage(document.documentElement.lang === "it" ? "en" : "it"));
+
+// Copy buttons
+for (const b of document.querySelectorAll("[data-copy]")) {
+  b.addEventListener("click", async () => {
+    const text = document.getElementById(b.dataset.copy).textContent;
+    try { await navigator.clipboard.writeText(text); b.textContent = "✓"; setTimeout(() => setLanguage(document.documentElement.lang), 1200); } catch (e) {}
+  });
+}
+
+// After a download starts: thanks, and the one thing that helps.
+const toast = document.getElementById("toast");
+for (const a of document.querySelectorAll('a[href$="muStats.dmg"]')) {
+  a.addEventListener("click", () => setTimeout(() => toast.classList.add("on"), 800));
+}
+document.getElementById("toast-close").addEventListener("click", () => toast.classList.remove("on"));
+
+// Star count and version, from GitHub. The page is complete without them.
+fetch("https://api.github.com/repos/" + REPO).then(r => r.ok ? r.json() : null).then(d => {
+  if (!d || !d.stargazers_count) return;
+  const s = document.getElementById("stars");
+  s.textContent = d.stargazers_count >= 1000 ? (d.stargazers_count / 1000).toFixed(1) + "k" : d.stargazers_count;
+  s.hidden = false;
+}).catch(() => {});
+fetch("https://api.github.com/repos/" + REPO + "/releases/latest").then(r => r.ok ? r.json() : null).then(d => {
+  if (d && d.tag_name) document.getElementById("version").textContent = d.tag_name;
+}).catch(() => {});
+</script>
+</body>
+</html>

@@ -6,8 +6,9 @@
 
 A lightweight system monitor for the Mac menu bar.
 
+[![Website](https://img.shields.io/badge/website-danesed.github.io%2FmuStats-blue)](https://danesed.github.io/muStats/)
 [![macOS 14+](https://img.shields.io/badge/macOS-14%2B-black?logo=apple)](#install)
-[![Apple silicon](https://img.shields.io/badge/Apple%20silicon-native-black)](#install)
+[![Apple silicon and Intel](https://img.shields.io/badge/Apple%20silicon%20%2B%20Intel-universal-black)](#install)
 [![Homebrew](https://img.shields.io/badge/brew-danesed%2Ftap%2Fmustats-orange?logo=homebrew)](#install)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 ![Status: alpha](https://img.shields.io/badge/status-alpha-yellow)
@@ -40,18 +41,29 @@ xattr -dr com.apple.quarantine /Applications/muStats.app
 Homebrew does this for you. Updates arrive through the app and are verified with the
 project's own signing key.
 
-Requires macOS 14 or later on Apple silicon.
+Requires macOS 14 (Sonoma) or later. One download runs on Apple silicon and on Intel
+Macs. The Intel build has not been tested on a real Intel Mac yet: if you try it,
+please [open an issue](https://github.com/Danesed/muStats/issues) and say how it went.
 
 ## Features
 
 - **Menu bar:** rings, bars, text, graphs and indicators for 17 metrics, in one item or
   several.
 - **Panel:** every module with its details, history charts (5 minutes to 30 days) and
-  the processes using the most CPU, memory, disk or energy.
+  the apps using the most CPU, memory, disk or energy.
 - **Summary line:** when something is high, the top of the panel says what and which
-  process, for example "Memory pressure 88%, Xcode 4.0 GB".
+  app, for example "Memory pressure 88%, usually 23%, Google Chrome 8.2 GB". When all is
+  calm it says what you missed while the panel was closed.
+- **This Mac's usual:** μStats learns from 30 days of its own history where this Mac
+  normally sits at each hour. Charts draw that range, and a reading far above it is
+  pointed out even when it is below every fixed threshold.
+- **Apps, not processes:** one row per app with all of its helpers added up, and CPU,
+  memory and energy side by side.
+- **Forecasts:** how many days until the startup disk is full, and how this Mac changed
+  after a macOS update.
 - **Today:** CPU over the last 24 hours, with notable moments marked.
-- **Chip:** live load on performance cores, efficiency cores, GPU and memory.
+- **Chip:** the processor drawn as its package, with every core, the GPU and the memory
+  modules lit by their real load.
 - **Alerts:** notifications for CPU, memory pressure, temperature, battery and disk,
   sent only when a condition lasts, with a cooldown.
 - **Widgets:** Rings and Overview, in small, medium and large, configured in the app.
@@ -180,6 +192,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for tests and code layout, and
 ## Feedback
 
 Bugs and requests go on the [issue tracker](https://github.com/Danesed/muStats/issues).
+
+## Support
+
+μStats is free and open source, and it stays that way. If it earns a place in your menu
+bar, [star it on GitHub](https://github.com/Danesed/muStats): stars are how other people
+find it.
 
 ## Credits
 
