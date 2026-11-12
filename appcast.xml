@@ -6,6 +6,19 @@
         <description>μStats releases.</description>
         <language>en</language>
         <item>
+            <title>0.2.1</title>
+            <sparkle:version>4</sparkle:version>
+            <sparkle:shortVersionString>0.2.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <pubDate>Thu, 12 Nov 2026 12:00:50 +0000</pubDate>
+            <sparkle:fullReleaseNotesLink>https://github.com/Danesed/muStats/blob/main/CHANGELOG.md</sparkle:fullReleaseNotesLink>
+            <description sparkle:format="markdown">### New
+
+- A new app icon: a serif μ with the status dot, on the chip's floorplan drawn as a load map, where a darker cell is a busier one.
+</description>
+            <enclosure url="https://github.com/Danesed/muStats/releases/download/v0.2.1/muStats.dmg" sparkle:edSignature="wl+4IB/L3Aruxk8+zaTqPvZbTz0WR+DmCMHaAF1Es4R64sGseDpWeyY2S9Sf+HDtr+eGLAosc5rgp+5vWHz2AA==" length="9602888" type="application/octet-stream" />
+        </item>
+        <item>
             <title>0.2.0</title>
             <sparkle:version>3</sparkle:version>
             <sparkle:shortVersionString>0.2.0</sparkle:shortVersionString>

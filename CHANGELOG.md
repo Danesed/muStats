@@ -4,6 +4,13 @@ Each release has up to three groups: New, Improved and Fixed. `Scripts/appcast.p
 this file, so the update window and this page always say the same thing. Keep the
 headings exactly as they are below.
 
+## 0.2.1
+
+### New
+
+- A new app icon: a serif μ with the status dot, on the chip's floorplan drawn as a load
+  map, where a darker cell is a busier one.
+
 ## 0.2.0
 
 ### New
