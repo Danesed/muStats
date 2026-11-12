@@ -49,6 +49,22 @@ public final class PanelController: NSObject, NSWindowDelegate {
     private var isPositioning = false
 
     /// Pending release of the hidden panel's view tree. See `scheduleWindowRelease`.
+    /// When the panel was last closed, kept across launches: what the status line
+    /// measures "since you last looked" from.
+    private var lastHidden: Date? = (UserDefaults.standard.object(forKey: PanelController.lastHiddenKey) as? Date) {
+        didSet { UserDefaults.standard.set(lastHidden, forKey: Self.lastHiddenKey) }
+    }
+    private static let lastHiddenKey = "panel.lastHidden"
+
+    /// The collapsed set the user left, while the panel shows one it opened for them.
+    private var collapsedBeforeAutoOpen: Set<PanelModule>?
+    /// The set the automatic opening produced, to tell whether the user changed it.
+    private var collapsedAfterAutoOpen: Set<PanelModule>?
+    private var autoOpenedModule: PanelModule?
+    /// A module the user folded after it was opened for them. Left alone until its
+    /// reading is calm again: one refusal is an answer.
+    private var autoOpenDeclined: PanelModule?
+
     private var releaseTask: Task<Void, Never>?
     private var memoryPressureSource: (any DispatchSourceMemoryPressure)?
 
@@ -84,11 +100,19 @@ public final class PanelController: NSObject, NSWindowDelegate {
     // MARK: Presentation
 
     public func show(anchoredTo anchor: NSRect?, on screen: NSScreen?) {
+        present(anchoredTo: anchor, on: screen, opensOnAlert: true)
+    }
+
+    private func present(anchoredTo anchor: NSRect?, on screen: NSScreen?, opensOnAlert: Bool) {
+        if opensOnAlert, !isVisible { openOnAlert() }
         releaseTask?.cancel()
         releaseTask = nil
         memoryPressureSource?.cancel()
         memoryPressureSource = nil
         let window = existingOrNewWindow()
+        // Once, as the panel opens: one walk over the day for the whole time it is up.
+        layout?.recap = PanelRecap.make(events: PanelEvents.detect(in: engine.dayHistory),
+                                        since: lastHidden, now: Date())
         lastAnchor = anchor
         lastScreen = screen ?? anchor.flatMap(Self.screen(containing:))
         presentation &+= 1
@@ -115,13 +139,58 @@ public final class PanelController: NSObject, NSWindowDelegate {
         WindowLog.log("panel shown frame=\(window.frame) key=\(window.isKeyWindow) appActive=\(NSApp.isActive) monitors=\(activeEventMonitorCount)")
     }
 
+    /// The module to unfold as the panel opens: the one the status line would name,
+    /// when its reading is at warning or critical. Nil when the user turned this off,
+    /// when it is already open, or when they folded it the last time.
+    static func moduleToOpen(panel: PanelSettings, alerting: PanelModule?,
+                             declined: PanelModule?) -> PanelModule? {
+        guard panel.opensOnAlert, let alerting, alerting != declined,
+              panel.visibleModules.contains(alerting),
+              panel.collapsedModules.contains(alerting) else { return nil }
+        return alerting
+    }
+
+    /// Answer before the question: a reader who opens the panel while the Mac is
+    /// struggling wants to know what is doing it, and that is one click further in.
+    private func openOnAlert() {
+        let panel = settings.settings.panel
+        let insight = PanelInsight.make(modules: panel.visibleModules, engine: engine,
+                                        formatter: MetricFormatter(settings: settings.settings.general))
+        let alerting = insight.level != .none ? insight.module : nil
+        if let declined = autoOpenDeclined, declined != alerting { autoOpenDeclined = nil }
+        guard let module = Self.moduleToOpen(panel: panel, alerting: alerting,
+                                             declined: autoOpenDeclined) else { return }
+        collapsedBeforeAutoOpen = panel.collapsedModules
+        let opened = panel.collapsedModules(toggling: module)
+        collapsedAfterAutoOpen = opened
+        autoOpenedModule = module
+        settings.update { $0.panel.collapsedModules = opened }
+    }
+
+    /// Put the modules back the way the user left them, unless they changed them
+    /// while the panel was open: then what they chose stands.
+    private func restoreAfterAutoOpen() {
+        defer {
+            collapsedBeforeAutoOpen = nil
+            collapsedAfterAutoOpen = nil
+            autoOpenedModule = nil
+        }
+        guard let before = collapsedBeforeAutoOpen, let after = collapsedAfterAutoOpen else { return }
+        if settings.settings.panel.collapsedModules == after {
+            settings.update { $0.panel.collapsedModules = before }
+        } else {
+            autoOpenDeclined = autoOpenedModule
+        }
+    }
+
     /// Open the panel with `module` expanded, on the Now tab. Already open, the module
     /// unfolds where it is.
     public func show(expanding module: PanelModule, anchoredTo anchor: NSRect?, on screen: NSScreen?) {
         if settings.settings.panel.collapsedModules.contains(module) {
             settings.update { $0.panel.collapsedModules = $0.panel.collapsedModules(toggling: module) }
         }
-        if !isVisible { show(anchoredTo: anchor, on: screen) }
+        // The caller named the module; the one in alert does not get to replace it.
+        if !isVisible { present(anchoredTo: anchor, on: screen, opensOnAlert: false) }
         layout?.request(module)
     }
 
@@ -133,6 +202,8 @@ public final class PanelController: NSObject, NSWindowDelegate {
         presentation &+= 1
         let generation = presentation
         isVisible = false
+        restoreAfterAutoOpen()
+        lastHidden = Date()
         layout?.isPanelVisible = false
         engine.setPanelDetails([], processCount: false)
         // A disclosure interrupted by a dismiss would otherwise hold its transition

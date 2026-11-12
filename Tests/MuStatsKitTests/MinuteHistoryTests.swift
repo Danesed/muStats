@@ -430,7 +430,8 @@ struct PeakNoteIngestTests {
         #expect(engine.dayHistory.note(.cpu, at: t) == nil)
         engine.ingest(snapshot(fresh: true, at: t))
         #expect(engine.dayHistory.note(.cpu, at: t)?.name == "Xcode")
-        #expect(engine.dayHistory.note(.memory, at: t)?.name == "Xcode")
+        // By app: Chrome's forty-one processes hold more than Xcode's largest one.
+        #expect(engine.dayHistory.note(.memory, at: t)?.name == "Google Chrome")
         #expect(engine.dayHistory.series(.cpuTotal).notes.values.contains("Xcode"))
     }
 
@@ -441,9 +442,9 @@ struct PeakNoteIngestTests {
         // 40% of eleven cores is 440% of one; a process at 30% of one explains nothing.
         engine.ingest(snapshot(fresh: true, busy: 0.4, topCPU: 30, at: t))
         #expect(engine.dayHistory.note(.cpu, at: t) == nil)
-        // The fixture's largest process holds 4.3 GB of an 11 GB used total, so the
+        // The fixture's largest app holds 8.2 GB of an 11 GB used total, so the
         // memory note is unaffected by the CPU share.
-        #expect(engine.dayHistory.note(.memory, at: t)?.name == "Xcode")
+        #expect(engine.dayHistory.note(.memory, at: t)?.name == "Google Chrome")
         engine.ingest(snapshot(fresh: true, busy: 0.4, topCPU: 200, at: t))
         #expect(engine.dayHistory.note(.cpu, at: t)?.name == "Xcode")
     }

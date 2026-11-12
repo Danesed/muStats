@@ -106,6 +106,7 @@ final class AppCoordinator {
             startDemo(demo)
             return
         }
+        engine.systemUpdate = SystemUpdateRecord.noteLaunch()
         engine.start()
         thresholdMonitor.start()
         hotKeys.start()

@@ -32,6 +32,45 @@ struct PanelSummary {
     var reservedValueText: String?
 }
 
+/// How a row stands against the others.
+///
+/// Nine rows at one contrast ask the reader to compare nine numbers to find the one
+/// that matters. When a row has something to say the calm ones step back, so the eye
+/// lands on it before reading anything: emphasis made by removing ink from the rest,
+/// not by adding it to the one. With nothing to say, every row is `.normal` and the
+/// panel looks as it always did.
+enum PanelRowEmphasis: Equatable {
+    case normal
+    /// Calm while another row is not.
+    case receded
+    /// Below every threshold, but the reading the status line is pointing at.
+    case noticed
+
+    /// The emphasis of each of `modules`.
+    ///
+    /// - Parameters:
+    ///   - alerting: modules whose reading is at warning or critical.
+    ///   - noticed: the module a notice is about, if the status line carries one.
+    ///   - expanded: open modules, which never recede: the reader chose them.
+    ///   - dims: the user's setting.
+    static func assign(_ modules: [PanelModule], alerting: Set<PanelModule>, noticed: PanelModule?,
+                       expanded: Set<PanelModule>, dims: Bool) -> [PanelModule: PanelRowEmphasis] {
+        var standouts = alerting
+        if let noticed { standouts.insert(noticed) }
+        var result: [PanelModule: PanelRowEmphasis] = [:]
+        for module in modules {
+            if module == noticed, !alerting.contains(module) {
+                result[module] = .noticed
+            } else if dims, !standouts.isEmpty, !standouts.contains(module), !expanded.contains(module) {
+                result[module] = .receded
+            } else {
+                result[module] = .normal
+            }
+        }
+        return result
+    }
+}
+
 /// One module of the panel: a header that carries the headline value, and detail
 /// that the user can collapse away.
 struct PanelModuleView: View {
@@ -44,6 +83,7 @@ struct PanelModuleView: View {
     var captionColumnWidth: CGFloat
     /// Width of the name column, shared so every sparkline starts at one x.
     var nameColumnWidth: CGFloat = 80
+    var emphasis: PanelRowEmphasis = .normal
 
     @State private var isHovering = false
     @Environment(\.panelActions) var actions
@@ -120,6 +160,7 @@ struct PanelModuleView: View {
 
     private var header: some View {
         Button(action: toggleCollapsed) {
+          VStack(spacing: 3) {
             HStack(spacing: Design.Space.m) {
                 Image(systemName: "chevron.right")
                     .font(Design.Text.micro.weight(.semibold))
@@ -150,6 +191,17 @@ struct PanelModuleView: View {
                     // its left.
                     .layoutPriority(1)
             }
+            if let gauge {
+                PanelGauge(reading: gauge, excessTint: alertLevel.color ?? PanelGauge.unusualTint)
+                    // Starts under the name, the way a list's rules start under its
+                    // text: the glyph column stays clear and the bars share one origin.
+                    .padding(.leading, Self.gaugeInset)
+                    .transition(.opacity)
+            }
+          }
+            // A pointer on a receded row brings it back: pointing at it is asking.
+            .opacity(emphasis == .receded && !isHovering && !isKeyboardFocused ? Self.recededOpacity : 1)
+            .animation(Design.Motion.respectingAccessibility(Design.Motion.value), value: emphasis)
             .padding(.horizontal, Design.Space.panelInset)
             .contentShape(Rectangle())
             .background(hoverHighlight)
@@ -161,16 +213,36 @@ struct PanelModuleView: View {
             }
         }
         .accessibilityLabel(module.label)
-        .accessibilityValue([summary.leadValue, summary.value, alertLevel == .none ? nil : "needs attention"]
+        .accessibilityValue([summary.leadValue, summary.value,
+                             alertLevel != .none ? "needs attention" : emphasis == .noticed ? "unusual" : nil]
             .compactMap { $0 }.joined(separator: ", "))
         .accessibilityHint(isExpanded ? "Collapse" : "Expand")
+    }
+
+    /// Low enough to read as background, high enough to stay legible: the row is
+    /// still information, only not the news.
+    static let recededOpacity = 0.45
+
+    /// The chevron and the glyph, and the gaps after them.
+    static let gaugeInset: CGFloat = Design.Space.m + Design.Space.m + Design.Space.xl + Design.Space.m
+
+    /// The row's gauge: while the module is closed, the user wants gauges, and the
+    /// reading has a scale to be drawn on. Open, the detail says the same thing larger.
+    var gauge: PanelGaugeReading? {
+        Self.gauge(for: module, engine: engine, panel: settings.settings.panel, isExpanded: isExpanded)
+    }
+
+    static func gauge(for module: PanelModule, engine: MetricsEngine, panel: PanelSettings,
+                      isExpanded: Bool) -> PanelGaugeReading? {
+        guard !isExpanded, panel.showsGauges else { return nil }
+        return PanelGaugeReading.make(for: module, engine: engine, showsUsual: panel.shows(.moduleUsual))
     }
 
     /// Marks the glyph of a module whose reading is in alert colour, so the row is
     /// found by shape as well as by hue.
     @ViewBuilder
     private var alertDot: some View {
-        if let color = alertLevel.color {
+        if let color = alertLevel.color ?? (emphasis == .noticed ? PanelGauge.unusualTint : nil) {
             Circle()
                 .fill(color)
                 .frame(width: 5, height: 5)
@@ -189,6 +261,7 @@ struct PanelModuleView: View {
            let series = module.historySeries {
             PanelSparkline(samples: engine.history[series.key], key: series.key,
                            domain: series.domain,
+                           usual: usualRange(for: series.key),
                            tint: Design.Palette.secondaryText)
                 .frame(minWidth: 0, idealWidth: PanelSparkline.width, maxWidth: PanelSparkline.width)
                 .frame(height: PanelSparkline.height)
@@ -198,6 +271,15 @@ struct PanelModuleView: View {
                 .frame(height: 1)
                 .accessibilityHidden(true)
         }
+    }
+
+    /// This hour's usual range for the row's series, when the user wants it drawn and
+    /// the month holds enough days to have one.
+    private func usualRange(for key: SeriesKey) -> UsualRange? {
+        // The gauge under the row already carries the range, at a size it can be read.
+        guard settings.settings.panel.shows(.moduleUsual), !settings.settings.panel.showsGauges,
+              Usual.isDrawn(for: key) else { return nil }
+        return Usual.range(key, month: engine.monthHistory, at: engine.history.lastSampleDate ?? Date())
     }
 
     private var isKeyboardFocused: Bool {

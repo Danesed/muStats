@@ -32,6 +32,15 @@ struct PanelEvent: Equatable, Identifiable {
         }
     }
 
+    /// The same stretch once it is over, for the line that says what was missed.
+    func pastTitle(using formatter: MetricFormatter) -> String {
+        switch kind {
+        case .cpu: return String(localized: "CPU peaked at \(formatter.percent(peak))")
+        case .memory: return String(localized: "Memory pressure reached \(formatter.percent(peak))")
+        case .heat: return String(localized: "Ran hot at \(formatter.temperature(peak))")
+        }
+    }
+
     func title(using formatter: MetricFormatter) -> String {
         switch kind {
         case .cpu: return String(localized: "CPU at \(formatter.percent(peak))")
@@ -208,6 +217,8 @@ struct PanelTodayCard: View {
             }
             if let series = PanelModule.cpu.historySeries {
                 HistorySilhouette(series, day: engine.dayHistory,
+                                  usualFrom: settings.settings.panel.shows(.moduleUsual)
+                                      ? engine.monthHistory : nil,
                                   tint: Design.Palette.secondaryText,
                                   style: settings.settings.charts.style,
                                   height: Self.plotHeight)

@@ -291,6 +291,15 @@ private struct PanelPreviewHost: View {
                 default: return .now
                 }
             }())
+            // `MUSTATS_RENDER_RECAP=360` renders the line a panel closed for that many
+            // minutes opens on.
+            .environment(\.panelRecap, {
+                guard let minutes = ProcessInfo.processInfo.environment["MUSTATS_RENDER_RECAP"].flatMap(Double.init)
+                else { return nil }
+                let now = SnapshotFixtures.referenceDate
+                return PanelRecap.make(events: PanelEvents.detect(in: SnapshotFixtures.dayHistory()),
+                                       since: now.addingTimeInterval(-60 * minutes), now: now)
+            }())
             .floatingSurface(in: RoundedRectangle(cornerRadius: Design.Radius.panel,
                                                   style: .continuous))
             .clipShape(RoundedRectangle(cornerRadius: Design.Radius.panel, style: .continuous))
@@ -332,7 +341,9 @@ enum PreviewEngine {
             .appendingPathComponent("MuStatsRender-\(UUID().uuidString)")
         let store = SettingsStore(directory: directory)
         store.update { $0 = request.settings }
-        if ProcessInfo.processInfo.environment["MUSTATS_RENDER_TAB"] == "chip" {
+        // `MUSTATS_RENDER_CHIP=1` adds the Chip tab to a render of another tab.
+        if ProcessInfo.processInfo.environment["MUSTATS_RENDER_TAB"] == "chip"
+            || ProcessInfo.processInfo.environment["MUSTATS_RENDER_CHIP"] != nil {
             store.update { $0.panel.showsLiveChip = true }
         }
         if ProcessInfo.processInfo.environment["MUSTATS_RINGS"] != nil {
@@ -354,6 +365,12 @@ enum PreviewEngine {
                                ? MinuteHistory(capacity: MinuteHistory.monthCapacity,
                                                bucketDuration: MinuteHistory.monthBucketDuration)
                                : SnapshotFixtures.monthHistory())
+        // `MUSTATS_RENDER_UPDATE=5` renders a Mac updated that many days ago.
+        if let days = ProcessInfo.processInfo.environment["MUSTATS_RENDER_UPDATE"].flatMap(Double.init) {
+            engine.systemUpdate = SystemUpdateRecord(
+                version: "26.5.2", build: "25F80", previousVersion: "26.5.1",
+                updatedAt: SnapshotFixtures.referenceDate.addingTimeInterval(-86_400 * days))
+        }
         // Fixtures carry a fixed date, which would otherwise read as stale.
         engine.staleOverride = false
         engineCache[key] = engine

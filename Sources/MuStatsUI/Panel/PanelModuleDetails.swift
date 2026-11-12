@@ -48,6 +48,7 @@ extension PanelModuleView {
                          tint: chartTint,
                          band: bandTint,
                          defaultRange: settings.settings.panel.defaultHistoryRange,
+                         showsUsual: settings.settings.panel.shows(.moduleUsual),
                          range: $historyRange)
 
                 .padding(.top, Design.Space.s)
@@ -93,7 +94,7 @@ extension PanelModuleView {
                 if shows(.cpuProcesses) {
                     // No share: a process at 412% is "4% of the machine", which reads as
                     // a contradiction beside the number it qualifies.
-                    culprits("Using the most CPU", showsShare: false, by: { $0.cpuPercent }) {
+                    appCulprits("Using the most CPU", showsShare: false, by: { $0.cpuPercent }) {
                         formatter.unclampedPercent($0.cpuPercent)
                     }
                 }
@@ -164,8 +165,8 @@ extension PanelModuleView {
                     PanelSegmentLegend(segments: segments, format: .memoryBytes)
                 }
                 if shows(.memoryProcesses) {
-                    culprits("Using the most memory", total: Double(memory.totalBytes),
-                             by: { Double($0.memoryBytes) }) {
+                    appCulprits("Using the most memory", total: Double(memory.totalBytes),
+                                by: { Double($0.memoryBytes) }) {
                         formatter.memory($0.memoryBytes)
                     }
                 }
@@ -227,6 +228,49 @@ extension PanelModuleView {
                 .padding(.top, Design.Space.xs)
             } else if reservesRows {
                 // The first list after the panel asks for one has no rates yet.
+                culpritPlaceholder(title, count: count)
+            }
+        } else if reservesRows, engine.processes.failure == .pending {
+            culpritPlaceholder(title, count: count)
+        }
+    }
+
+    /// The same list by app, each with all of its processes counted in. Where the
+    /// figure exists per app this is the one to show: the reader quits an app, not a
+    /// helper, and a browser's forty renderers are one answer.
+    @ViewBuilder
+    func appCulprits(_ title: String, count: Int = 3,
+                     total: Double? = nil, showsShare: Bool = true,
+                     reservesRows: Bool = true,
+                     by measure: @escaping (AppUsage) -> Double,
+                     value: @escaping (AppUsage) -> String) -> some View {
+        if let processes = engine.processes.value {
+            let ranked = processes.apps
+                .filter { measure($0) > 0 }
+                .sorted { measure($0) > measure($1) }
+                .prefix(count)
+            if let top = ranked.first.map(measure), top > 0 {
+                let whole = total ?? processes.apps.reduce(0) { $0 + max(measure($1), 0) }
+                VStack(alignment: .leading, spacing: Design.Space.xxs + 1) {
+                    HStack {
+                        PanelSectionLabel(title)
+                        Spacer(minLength: Design.Space.xs)
+                        Text("Bars relative to first app")
+                            .font(Design.Text.micro)
+                            .foregroundStyle(Design.Palette.tertiaryText)
+                    }
+                    ForEach(Array(ranked)) { app in
+                        let amount = measure(app)
+                        culpritRow(name: app.name, count: app.processCount, value: value(app),
+                                   fill: amount / top,
+                                   share: showsShare && whole > 0 ? formatter.percent(amount / whole) : nil) {
+                            PanelAppIconView(icon: PanelAppIcon.icon(forApp: app))
+                        }
+                        .contextMenu { PanelAppMenu(app: app, activityMonitorTab: module.activityMonitorTab) }
+                    }
+                }
+                .padding(.top, Design.Space.xs)
+            } else if reservesRows {
                 culpritPlaceholder(title, count: count)
             }
         } else if reservesRows, engine.processes.failure == .pending {
@@ -534,6 +578,7 @@ extension PanelModuleView {
                     ForEach(disk.volumes) { volume in
                         volumeRow(volume)
                     }
+                    diskForecast(disk)
                 }
                 if shows(.diskProcesses) {
                     culprits("Reading and writing the most", reservesRows: false, by: diskTotal) {
@@ -568,6 +613,32 @@ extension PanelModuleView {
     /// which macOS counts as available and the filesystem counts as used. Following
     /// Finder and reporting one of them everywhere means free + used = total, on screen,
     /// with no footnote.
+    /// How long the startup disk lasts at the rate of the last two weeks, under the
+    /// bar that says how full it is. Absent while the disk is steady or emptying,
+    /// and until the month holds enough days to draw a line through.
+    @ViewBuilder
+    private func diskForecast(_ disk: DiskSnapshot) -> some View {
+        if let forecast = DiskForecast.make(month: engine.monthHistory,
+                                            now: engine.history.lastSampleDate ?? Date()) {
+            HStack(spacing: Design.Space.xs) {
+                Image(systemName: "arrow.up.right")
+                    .font(Design.Text.micro.weight(.semibold))
+                    .foregroundStyle(Design.Palette.tertiaryText)
+                Text(PanelForecast.headline(forecast))
+                    .font(Design.Text.caption)
+                    .foregroundStyle(Design.Palette.primaryText)
+                Spacer(minLength: Design.Space.m)
+                if let rate = PanelForecast.rate(forecast, disk: disk, formatter: formatter) {
+                    Text(rate)
+                        .font(Design.Text.caption.monospacedDigit())
+                        .foregroundStyle(Design.Palette.secondaryText)
+                }
+            }
+            .lineLimit(1)
+            .accessibilityElement(children: .combine)
+        }
+    }
+
     private func volumeRow(_ volume: VolumeInfo) -> some View {
         let total = Double(volume.totalBytes)
         let remaining = total > 0 ? Double(volume.availableBytes) / total : 0
@@ -610,9 +681,9 @@ extension PanelModuleView {
                 let entries = powerEntries(power)
                 if shows(.batteryHealth), !entries.isEmpty { PanelDetailGrid(entries: entries) }
                 if shows(.batteryProcesses) {
-                    culprits("Using significant energy", reservesRows: false,
-                             by: { ($0.energyImpact ?? 0) >= Self.significantWatts ? $0.energyImpact ?? 0 : 0 }) {
-                        formatter.watts($0.energyImpact, decimals: 2)
+                    appCulprits("Using significant energy", reservesRows: false,
+                                by: { ($0.watts ?? 0) >= Self.significantWatts ? $0.watts ?? 0 : 0 }) {
+                        formatter.watts($0.watts, decimals: 2)
                     }
                     if let saving = batterySaving(power) {
                         Text(saving)
@@ -641,12 +712,12 @@ extension PanelModuleView {
     private func batterySaving(_ power: PowerSnapshot) -> String? {
         guard let draw = BatteryForecast.draw(power),
               let left = BatteryForecast.timeLeft(power),
-              let top = engine.processes.value?.processes
-                .filter({ ($0.energyImpact ?? 0) >= Self.significantWatts })
-                .max(by: { ($0.energyImpact ?? 0) < ($1.energyImpact ?? 0) }),
-              let gain = BatteryForecast.gain(timeLeft: left, draw: draw, processWatts: top.energyImpact ?? 0),
+              let top = engine.processes.value?.apps
+                .filter({ ($0.watts ?? 0) >= Self.significantWatts })
+                .max(by: { ($0.watts ?? 0) < ($1.watts ?? 0) }),
+              let gain = BatteryForecast.gain(timeLeft: left, draw: draw, processWatts: top.watts ?? 0),
               gain >= BatteryForecast.worthSaying else { return nil }
-        let name = PanelCulprit.appName(for: top)
+        let name = top.name
         return String(localized: "Quitting \(name) would add about \(formatter.uptime(gain)) of battery.")
     }
 
@@ -812,9 +883,11 @@ extension PanelModuleView {
     @ViewBuilder
     private var processesDetail: some View {
         if isExpanded, engine.processes.failure == .pending {
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: Design.Space.xxs + 1) {
+                PanelAppBillHeader(column: .constant(.cpu))
+                    .redacted(reason: .placeholder)
                 ForEach(0..<PanelSettings.processRowCount, id: \.self) { _ in
-                    PanelProcessPlaceholder(filled: false)
+                    PanelProcessPlaceholder(filled: true)
                 }
             }
             .transition(.disclosure)
@@ -825,29 +898,8 @@ extension PanelModuleView {
 
     private var processList: some View {
         section(engine.processes) { processes in
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(topProcesses(processes)) { process in
-                    processRow(process, value: processValue(process))
-                }
-            }
+            PanelAppBill(apps: processes.apps)
         }
-    }
-
-    private var sortKey: ProcessSortKey { PanelSettings.processSortKey }
-
-    private func topProcesses(_ processes: ProcessSnapshot) -> [ProcessRow] {
-        let count = PanelSettings.processRowCount
-        let sorted = processes.processes.sorted { a, b in
-            switch sortKey {
-            case .cpu: return a.cpuPercent > b.cpuPercent
-            case .memory: return a.memoryBytes > b.memoryBytes
-            case .energy: return (a.energyImpact ?? 0) > (b.energyImpact ?? 0)
-            case .diskIO: return diskTotal(a) > diskTotal(b)
-            case .networkIO, .name: return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
-            case .pid: return a.pid < b.pid
-            }
-        }
-        return Array(sorted.prefix(count))
     }
 
     private func diskTotal(_ process: ProcessRow) -> Double {
@@ -858,44 +910,9 @@ extension PanelModuleView {
     /// dominates is a length before it is a number.
     private func processRow(_ process: ProcessRow, value: String, fill: Double? = nil,
                             share: String? = nil) -> some View {
-        HStack(spacing: Design.Space.s) {
+        culpritRow(name: process.name, count: 1, value: value, fill: fill, share: share) {
             processIcon(process)
-            Text(process.name)
-                .font(Design.Text.body)
-                .foregroundStyle(Design.Palette.primaryText)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Spacer(minLength: Design.Space.m)
-            if let share {
-                Text(share)
-                    .font(Design.Text.caption.monospacedDigit())
-                    .foregroundStyle(Design.Palette.tertiaryText)
-                    .lineLimit(1)
-            }
-            Text(value)
-                .font(Design.Text.value)
-                .foregroundStyle(Design.Palette.primaryText)
-                .lineLimit(1)
-                .frame(width: PanelModuleView.processValueWidth, alignment: .trailing)
         }
-        .padding(.horizontal, fill == nil ? 0 : Design.Space.s)
-        .frame(height: fill == nil ? nil : 22)
-        .background {
-            if let fill {
-                GeometryReader { proxy in
-                    ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: Design.Radius.control, style: .continuous)
-                            .fill(Design.Palette.cardFill)
-                        RoundedRectangle(cornerRadius: Design.Radius.control, style: .continuous)
-                            .fill(Design.Palette.primaryText.opacity(0.10))
-                            .frame(width: proxy.size.width * CGFloat(min(max(fill, 0), 1)))
-                    }
-                }
-            }
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(process.name)
-        .accessibilityValue(value)
         .contextMenu {
             Button(role: .destructive) {
                 actOnProcess(process, signal: SIGTERM)
@@ -937,6 +954,57 @@ extension PanelModuleView {
         }
     }
 
+    /// A row as a gauge: it fills to `fill`, so how much one entry dominates is a
+    /// length before it is a number.
+    private func culpritRow<Icon: View>(name: String, count: Int, value: String, fill: Double?,
+                                        share: String?, @ViewBuilder icon: () -> Icon) -> some View {
+        HStack(spacing: Design.Space.s) {
+            icon()
+            Text(name)
+                .font(Design.Text.body)
+                .foregroundStyle(Design.Palette.primaryText)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            if count > 1 {
+                Text(verbatim: "×\(count)")
+                    .font(Design.Text.caption.monospacedDigit())
+                    .foregroundStyle(Design.Palette.tertiaryText)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            Spacer(minLength: Design.Space.m)
+            if let share {
+                Text(share)
+                    .font(Design.Text.caption.monospacedDigit())
+                    .foregroundStyle(Design.Palette.tertiaryText)
+                    .lineLimit(1)
+            }
+            Text(value)
+                .font(Design.Text.value)
+                .foregroundStyle(Design.Palette.primaryText)
+                .lineLimit(1)
+                .frame(width: PanelModuleView.processValueWidth, alignment: .trailing)
+        }
+        .padding(.horizontal, fill == nil ? 0 : Design.Space.s)
+        .frame(height: fill == nil ? nil : 22)
+        .background {
+            if let fill {
+                GeometryReader { proxy in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: Design.Radius.control, style: .continuous)
+                            .fill(Design.Palette.cardFill)
+                        RoundedRectangle(cornerRadius: Design.Radius.control, style: .continuous)
+                            .fill(Design.Palette.primaryText.opacity(0.10))
+                            .frame(width: proxy.size.width * CGFloat(min(max(fill, 0), 1)))
+                    }
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(name)
+        .accessibilityValue(value)
+    }
+
     private func actOnProcess(_ process: ProcessRow, signal: Int32) {
         let result = PanelProcessAction.perform(process, signal: signal)
         guard result != .success else { return }
@@ -968,28 +1036,7 @@ extension PanelModuleView {
     /// solid block. A symbol stays a symbol at any size.
     @ViewBuilder
     private func processIcon(_ process: ProcessRow) -> some View {
-        switch PanelAppIcon.icon(for: process) {
-        case .bundle(let image):
-            Image(nsImage: image)
-                .resizable()
-                .interpolation(.high)
-                .frame(width: Design.Space.l, height: Design.Space.l)
-        case .executable:
-            Image(systemName: "gearshape.fill")
-                .font(Design.Text.caption)
-                .foregroundStyle(Design.Palette.secondaryText)
-                .frame(width: Design.Space.l, height: Design.Space.l)
-        }
-    }
-
-    private func processValue(_ process: ProcessRow) -> String {
-        switch sortKey {
-        case .cpu, .name, .pid: return formatter.unclampedPercent(process.cpuPercent)
-        case .memory: return formatter.memory(process.memoryBytes)
-        case .energy: return formatter.watts(process.energyImpact, decimals: 2)
-        case .diskIO: return formatter.diskRate(diskTotal(process))
-        case .networkIO: return MetricFormatter.unavailable
-        }
+        PanelAppIconView(icon: PanelAppIcon.icon(for: process))
     }
 
     // MARK: System
@@ -1004,6 +1051,11 @@ extension PanelModuleView {
                     if let display = system.displaySummary {
                         ReadoutRow("Display", display)
                     }
+                }
+                if shows(.systemUpdateEffect), let record = engine.systemUpdate,
+                   let effect = UpdateEffect.make(month: engine.monthHistory, updatedAt: record.updatedAt,
+                                                  now: engine.history.lastSampleDate ?? Date()) {
+                    PanelUpdateEffect(effect: effect, systemName: system.osName, version: record.version)
                 }
                 if shows(.systemSleepBlockers) {
                     PanelSleepBlockers()

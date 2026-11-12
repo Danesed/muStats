@@ -304,13 +304,17 @@ enum PanelAppIcon {
 
     static func icon(for process: ProcessRow) -> PanelProcessIcon {
         guard let key = process.executablePath ?? process.bundleIdentifier else { return .executable }
+        return icon(forKey: key, bundle: process.executablePath.flatMap(bundlePath(for:)),
+                    bundleIdentifier: process.bundleIdentifier)
+    }
+
+    static func icon(forKey key: String, bundle: String?, bundleIdentifier: String?) -> PanelProcessIcon {
         if let cached = cache[key] { return cached }
         if cache.count >= cacheLimit { cache.removeAll(keepingCapacity: true) }
         let resolved: PanelProcessIcon
-        if let path = process.executablePath, let bundle = bundlePath(for: path),
-           FileManager.default.fileExists(atPath: bundle) {
+        if let bundle, FileManager.default.fileExists(atPath: bundle) {
             resolved = .bundle(NSWorkspace.shared.icon(forFile: bundle))
-        } else if let app = appURL(forBundleIdentifier: process.bundleIdentifier) {
+        } else if let app = appURL(forBundleIdentifier: bundleIdentifier) {
             resolved = .bundle(NSWorkspace.shared.icon(forFile: app.path))
         } else {
             resolved = .executable
@@ -423,16 +427,33 @@ struct PanelSparkline: View {
     let samples: SampleRing
     let key: SeriesKey
     var domain: ClosedRange<Double>?
+    /// Where the reading usually sits at this hour, drawn as a band behind the line.
+    /// With it the trace has something to be compared with: a line inside the band is
+    /// an ordinary afternoon, a line above it is not, and no threshold was consulted.
+    var usual: UsualRange?
     let tint: Color
 
-    static let width: CGFloat = 40
-    static let height: CGFloat = 12
+    static let width: CGFloat = 44
+    static let height: CGFloat = 14
+    /// The thinnest band that still reads as a band. A Mac that idles within two
+    /// points of itself would otherwise draw its habit as a hairline.
+    static let minimumBand: CGFloat = 3
 
     var body: some View {
         GeometryReader { proxy in
-            let paths = Self.paths(samples, key: key, domain: domain, in: proxy.size)
+            let paths = Self.paths(samples, key: key, domain: domain, usual: usual, in: proxy.size)
             ZStack {
-                PlotShape(paths.area).fill(tint.opacity(0.14))
+                // One fill behind the line, never two: with a usual range it is the
+                // band, without one the area under the trace.
+                if let band = paths.band {
+                    PlotShape(band).fill(tint.opacity(0.3))
+                } else {
+                    // Fades to the baseline, so the trace keeps its weight where it is
+                    // and the row is not striped with small grey blocks.
+                    PlotShape(paths.area)
+                        .fill(LinearGradient(colors: [tint.opacity(0.26), tint.opacity(0.02)],
+                                             startPoint: .top, endPoint: .bottom))
+                }
                 PlotShape(paths.line)
                     .stroke(tint, style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
             }
@@ -440,22 +461,31 @@ struct PanelSparkline: View {
         .accessibilityHidden(true)
     }
 
-    /// At most one sample per half point of width, the newest at the right edge.
+    /// At most one sample per half point of width, the newest at the right edge, where
+    /// a dot ties the trace to the number printed beside it.
     static func paths(_ samples: SampleRing, key: SeriesKey, domain: ClosedRange<Double>?,
-                      in size: CGSize) -> (line: Path, area: Path) {
+                      usual: UsualRange? = nil, in size: CGSize) -> (line: Path, area: Path, band: Path?) {
         var line = Path()
         var area = Path()
         let count = samples.count
         guard count >= Design.Chart.minimumPoints, size.width > 1, size.height > 1 else {
-            return (line, area)
+            return (line, area, nil)
         }
         let stats = ChartStats(samples)
-        guard stats.supportsTrend else { return (line, area) }
+        guard stats.supportsTrend else { return (line, area, nil) }
         let scale = ChartScale.resolve(peak: stats.maximum, domain: domain,
                                        naturalUpperBound: key.naturalUpperBound, adaptive: true)
         let points = min(count, max(Int(size.width * 2), 2))
         let inset: CGFloat = 1
+        // Stroked at the line's width, a circle this small closes into a solid dot.
+        let dot: CGFloat = 0.75
         let height = size.height - 2 * inset
+        // The dot sits inside the frame, so the trace ends one radius short of the edge.
+        let width = size.width - dot - 0.5
+        func y(_ value: Double) -> CGFloat {
+            let fraction = min(max((value - scale.lowerBound) / scale.span, 0), 1)
+            return inset + height * (1 - CGFloat(fraction))
+        }
         var first: CGPoint?
         var last: CGPoint?
         func closeRun() {
@@ -473,9 +503,7 @@ struct PanelSparkline: View {
                 last = nil
                 continue
             }
-            let fraction = min(max((value - scale.lowerBound) / scale.span, 0), 1)
-            let point = CGPoint(x: size.width * CGFloat(i) / CGFloat(points - 1),
-                                y: inset + height * (1 - CGFloat(fraction)))
+            let point = CGPoint(x: width * CGFloat(i) / CGFloat(points - 1), y: y(value))
             if first == nil {
                 line.move(to: point)
                 area.move(to: point)
@@ -487,7 +515,25 @@ struct PanelSparkline: View {
             last = point
         }
         closeRun()
-        return (line, area)
+        if let last, last.x >= width - 0.5 {
+            line.addPath(ChartLayout.marker(at: last, radius: dot))
+        }
+        // The band needs a scale that does not move with the data, or the habit would
+        // slide around under a trace that had not changed.
+        var band: Path?
+        if let usual, !scale.isDerived {
+            var top = y(usual.high)
+            var bottom = y(usual.low)
+            if bottom - top < minimumBand {
+                let middle = min(max((top + bottom) / 2, inset + minimumBand / 2),
+                                 size.height - inset - minimumBand / 2)
+                top = middle - minimumBand / 2
+                bottom = middle + minimumBand / 2
+            }
+            band = Path(roundedRect: CGRect(x: 0, y: top, width: size.width, height: bottom - top),
+                        cornerRadius: 1)
+        }
+        return (line, area, band)
     }
 }
 

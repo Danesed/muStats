@@ -16,11 +16,13 @@ struct PanelPane: View {
                         Text(localizing: mode.label).tag(mode)
                     }
                 }
+                Toggle("Open on the module that needs attention", isOn: settings.binding(\.panel.opensOnAlert))
             } header: {
                 Text("Status Line")
             } footer: {
                 SettingsFootnote("The line at the top of Now, such as \"Everything looks normal\" "
-                                 + "or \"Memory pressure 88%\" with the app behind it.")
+                                 + "or \"Memory pressure 88%\" with the app behind it. "
+                                 + "A module opened for you folds again when the panel closes.")
             }
 
             Section {
@@ -36,6 +38,9 @@ struct PanelPane: View {
             Section {
                 elementToggle(.moduleSparklines)
                 elementToggle(.moduleCaptions)
+                elementToggle(.moduleUsual)
+                elementToggle(.moduleCalm)
+                Toggle("Gauges under the module rows", isOn: settings.binding(\.panel.showsGauges))
                 Toggle("History charts in open modules", isOn: settings.binding(\.panel.showsHistoryChart))
                 Picker("Default range", selection: settings.binding(\.panel.defaultHistoryRange)) {
                     ForEach(HistoryRange.allCases, id: \.self) { range in

@@ -17,6 +17,9 @@ final class PanelLayoutState {
     var isPanelVisible = false
     var selectedTab: PanelTab?
     var requestedModule: PanelModule?
+    /// What the reader missed since the panel was last closed, worked out once as it
+    /// opens and held for as long as it stays open.
+    var recap: PanelRecap?
     var navigationRevision: UInt = 0
     @ObservationIgnored var toggleModule: ((PanelModule) -> Void)?
 
@@ -71,8 +74,12 @@ public struct PanelRootView: View {
             }
             PanelHeaderView(tab: tab, tabs: availableTabs, isStale: engine.isStale,
                             hasUpdate: updates?.pending != nil)
-            if shownTab == .now, Self.showsStatusLine(settings.settings.panel.statusLine, level: insight.level) {
-                PanelInsightRow(insight: insight, open: open)
+            if shownTab == .now, Self.showsStatusLine(settings.settings.panel.statusLine, level: insight.level,
+                                                         isNotice: insight.isNotice || insight.isPast) {
+                // A stretch that is over lives in the day, so its line leads there.
+                PanelInsightRow(insight: insight) { module in
+                    if insight.isPast, availableTabs.contains(.today) { selectTab(.today) } else { open(module) }
+                }
                     .padding(.horizontal, Design.Space.s)
                     .padding(.top, Design.Space.s)
             }
@@ -93,13 +100,20 @@ public struct PanelRootView: View {
                         } else {
                             let captionColumnWidth = captionColumnWidth
                             let nameColumnWidth = nameColumnWidth
+                            let emphasis = rowEmphasis
                             ForEach(PanelGroup.arrange(modules), id: \.group) { entry in
                                 PanelGroupLabel(entry.group.title)
                                 VStack(alignment: .leading, spacing: 0) {
                                     ForEach(Array(entry.modules.enumerated()), id: \.element) { index, module in
-                                        if index > 0 { PanelSeparator() }
+                                        // A closed row with a gauge ends in its own rule; a
+                                        // hairline under that would be a rule under a rule.
+                                        // Kept in the layout either way, so nothing moves.
+                                        if index > 0 {
+                                            PanelSeparator(isVisible: !hasGauge(entry.modules[index - 1]))
+                                        }
                                         moduleView(module, captionColumnWidth: captionColumnWidth,
-                                                   nameColumnWidth: nameColumnWidth)
+                                                   nameColumnWidth: nameColumnWidth,
+                                                   emphasis: emphasis[module] ?? .normal)
                                             .id(module)
                                     }
                                 }
@@ -158,6 +172,7 @@ public struct PanelRootView: View {
     @Environment(\.panelActions) private var actions
     @State private var pickedTab: PanelTab?
     @Environment(\.panelInitialTab) private var initialTab
+    @Environment(\.panelRecap) private var renderedRecap
 
     private var tab: Binding<PanelTab> {
         Binding(get: { layout?.selectedTab ?? pickedTab ?? initialTab }, set: selectTab)
@@ -209,23 +224,45 @@ public struct PanelRootView: View {
     }
 
     /// Whether the status line is drawn, for the user's choice and the loudest level.
-    static func showsStatusLine(_ mode: PanelStatusLine, level: PanelAlertLevel) -> Bool {
+    static func showsStatusLine(_ mode: PanelStatusLine, level: PanelAlertLevel,
+                                isNotice: Bool = false) -> Bool {
         switch mode {
         case .always: return true
-        case .whenNotable: return level != .none
+        case .whenNotable: return level != .none || isNotice
         case .never: return false
         }
+    }
+
+    private func hasGauge(_ module: PanelModule) -> Bool {
+        let collapsed = layout?.collapsedModulesOverride ?? settings.settings.panel.collapsedModules
+        return PanelModuleView.gauge(for: module, engine: engine, panel: settings.settings.panel,
+                                     isExpanded: !collapsed.contains(module)) != nil
     }
 
     private func updateDetails() {
         engine.setPanelDetails(activeDetailSources, processCount: showsProcessCount)
     }
 
+    /// Which rows stand out and which step back, from the same alert test and the
+    /// same notice the status line uses, so the rows and the line cannot disagree.
+    private var rowEmphasis: [PanelModule: PanelRowEmphasis] {
+        let panel = settings.settings.panel
+        let alerting = panel.showsAlertColors
+            ? Set(modules.filter { PanelAlert.level(for: $0, engine: engine) != .none }) : []
+        let collapsed = layout?.collapsedModulesOverride ?? panel.collapsedModules
+        let insight = insight
+        return PanelRowEmphasis.assign(modules, alerting: alerting,
+                                       noticed: insight.isNotice ? insight.module : nil,
+                                       expanded: Set(modules.filter { !collapsed.contains($0) }),
+                                       dims: panel.shows(.moduleCalm))
+    }
+
     private func moduleView(_ module: PanelModule, captionColumnWidth: CGFloat,
-                            nameColumnWidth: CGFloat) -> some View {
+                            nameColumnWidth: CGFloat,
+                            emphasis: PanelRowEmphasis = .normal) -> some View {
         PanelModuleView(module: module, engine: engine, settings: settings,
                         layout: layout, captionColumnWidth: captionColumnWidth,
-                        nameColumnWidth: nameColumnWidth)
+                        nameColumnWidth: nameColumnWidth, emphasis: emphasis)
             .draggable(module.rawValue) {
                 Label(module.label, systemImage: module.symbolName)
                     .font(Design.Text.rowTitle)
@@ -253,7 +290,8 @@ public struct PanelRootView: View {
 
     private var insight: PanelInsight {
         PanelInsight.make(modules: modules, engine: engine,
-                          formatter: MetricFormatter(settings: settings.settings.general))
+                          formatter: MetricFormatter(settings: settings.settings.general),
+                          recap: layout?.recap ?? renderedRecap)
     }
 
     /// Opens the module the insight is about, unless it already is.
@@ -302,6 +340,18 @@ enum PanelTab: Hashable {
 
 private struct PanelInitialTabKey: EnvironmentKey {
     static let defaultValue = PanelTab.now
+}
+
+private struct PanelRecapKey: EnvironmentKey {
+    static let defaultValue: PanelRecap? = nil
+}
+
+extension EnvironmentValues {
+    /// The recap a render shows; the live panel takes its own from the controller.
+    var panelRecap: PanelRecap? {
+        get { self[PanelRecapKey.self] }
+        set { self[PanelRecapKey.self] = newValue }
+    }
 }
 
 extension EnvironmentValues {

@@ -140,19 +140,28 @@ public struct MinuteHistory: Sendable, Equatable {
     /// The last `capacity` buckets of one series, oldest first, ending at the newest
     /// bucket. Allocates four arrays; call once per render, not per point.
     public func series(_ key: SeriesKey) -> MinuteSeries {
+        series(key, trailing: capacity)
+    }
+
+    /// The newest `buckets` buckets of one series, the same value as
+    /// `series(key).trailing(buckets)` without building the rest of the tier first.
+    /// The last hour of a day is sixty buckets of 1,440: walking all of them to keep
+    /// one in twenty-four was most of what an open 1h chart cost per sample.
+    public func series(_ key: SeriesKey, trailing buckets: Int) -> MinuteSeries {
+        let keep = Swift.max(0, Swift.min(buckets, capacity))
         guard let newest = newestBucket else {
-            return MinuteSeries(key: key, capacity: capacity, end: Date(),
+            return MinuteSeries(key: key, capacity: keep, end: Date(),
                                 bucketDuration: bucketDuration)
         }
-        var lows = [Float](repeating: 0, count: capacity)
-        var means = [Float](repeating: 0, count: capacity)
-        var highs = [Float](repeating: 0, count: capacity)
-        var samples = [UInt16](repeating: 0, count: capacity)
+        var lows = [Float](repeating: 0, count: keep)
+        var means = [Float](repeating: 0, count: keep)
+        var highs = [Float](repeating: 0, count: keep)
+        var samples = [UInt16](repeating: 0, count: keep)
         var named: [Int: String] = [:]
         let kind = NoteKind(explaining: key)
-        let oldest = newest - capacity + 1
-        for (position, bucket) in (oldest...newest).enumerated() {
-            let slot = slot(of: bucket)
+        let oldest = newest - keep + 1
+        for position in 0..<keep {
+            let slot = slot(of: oldest + position)
             let cell = index(of: key, slot: slot)
             let count = counts[cell]
             guard count > 0 else { continue }

@@ -649,7 +649,7 @@ public enum PanelStatusLine: String, Sendable, Codable, CaseIterable, Equatable,
 /// A piece of the panel the user can hide. Panel-wide pieces have no module; the rest
 /// sit inside one module's detail.
 public enum PanelElement: String, Sendable, Codable, CaseIterable, Equatable, Hashable {
-    case moduleSparklines, moduleCaptions
+    case moduleSparklines, moduleCaptions, moduleUsual, moduleCalm
     case cpuCores, cpuProcesses, cpuLoad
     case memoryComposition, memoryProcesses, memoryPressure, memoryTotals
     case gpuMemory, gpuEngines
@@ -657,12 +657,12 @@ public enum PanelElement: String, Sendable, Codable, CaseIterable, Equatable, Ha
     case diskVolumes, diskProcesses, diskFolders, diskActivity
     case batteryOutlook, batteryAdapter, batteryHealth, batteryProcesses, batteryDevices
     case thermalReadings, thermalFans
-    case systemInfo, systemSleepBlockers
+    case systemInfo, systemUpdateEffect, systemSleepBlockers
 
     /// The module whose detail holds it, or nil for a panel-wide piece.
     public var module: PanelModule? {
         switch self {
-        case .moduleSparklines, .moduleCaptions: return nil
+        case .moduleSparklines, .moduleCaptions, .moduleUsual, .moduleCalm: return nil
         case .cpuCores, .cpuProcesses, .cpuLoad: return .cpu
         case .memoryComposition, .memoryProcesses, .memoryPressure, .memoryTotals: return .memory
         case .gpuMemory, .gpuEngines: return .gpu
@@ -672,7 +672,7 @@ public enum PanelElement: String, Sendable, Codable, CaseIterable, Equatable, Ha
         case .batteryOutlook, .batteryAdapter, .batteryHealth, .batteryProcesses,
              .batteryDevices: return .battery
         case .thermalReadings, .thermalFans: return .thermal
-        case .systemInfo, .systemSleepBlockers: return .system
+        case .systemInfo, .systemUpdateEffect, .systemSleepBlockers: return .system
         }
     }
 
@@ -680,6 +680,8 @@ public enum PanelElement: String, Sendable, Codable, CaseIterable, Equatable, Ha
         switch self {
         case .moduleSparklines: return "Mini graphs in the module rows"
         case .moduleCaptions: return "Second figure in the module rows"
+        case .moduleUsual: return "This Mac's usual range in graphs"
+        case .moduleCalm: return "Dim calm rows when another needs attention"
         case .cpuCores: return "Load per core"
         case .cpuProcesses, .memoryProcesses, .diskProcesses: return "Top processes"
         case .cpuLoad: return "Load averages and threads"
@@ -705,6 +707,7 @@ public enum PanelElement: String, Sendable, Codable, CaseIterable, Equatable, Ha
         case .thermalReadings: return "Pressure and GPU temperature"
         case .thermalFans: return "Fans"
         case .systemInfo: return "Model, chip, macOS and display"
+        case .systemUpdateEffect: return "Before and after a macOS update"
         case .systemSleepBlockers: return "What keeps the Mac awake"
         }
     }
@@ -750,6 +753,12 @@ public struct PanelSettings: Sendable, Codable, Equatable {
     public var developerToolsShown: Bool { showsDeveloperTools ?? DeveloperEnvironment.isPresent }
     /// The live chip tab: the processor drawn and lit by the readings. An extra.
     public var showsLiveChip: Bool
+    /// A gauge under each closed module row in place of its hairline: the reading as
+    /// a bar on its full scale. An extra, since the row already states the number.
+    public var showsGauges: Bool
+    /// Open the panel with the module in alert already unfolded, so the app behind
+    /// the reading is on screen without a click. It folds again when the panel closes.
+    public var opensOnAlert: Bool
     /// When the status line ("Everything looks normal") is shown.
     public var statusLine: PanelStatusLine
     /// Modules left out of the panel. Their sources are not sampled for it.
@@ -775,6 +784,8 @@ public struct PanelSettings: Sendable, Codable, Equatable {
                 showsToday: Bool = true,
                 showsDeveloperTools: Bool? = nil,
                 showsLiveChip: Bool = false,
+                showsGauges: Bool = false,
+                opensOnAlert: Bool = true,
                 statusLine: PanelStatusLine = .always,
                 hiddenModules: Set<PanelModule> = [],
                 hiddenElements: Set<PanelElement> = []) {
@@ -786,6 +797,8 @@ public struct PanelSettings: Sendable, Codable, Equatable {
         self.showsToday = showsToday
         self.showsDeveloperTools = showsDeveloperTools
         self.showsLiveChip = showsLiveChip
+        self.showsGauges = showsGauges
+        self.opensOnAlert = opensOnAlert
         self.statusLine = statusLine
         self.hiddenModules = hiddenModules
         self.hiddenElements = hiddenElements
@@ -856,7 +869,7 @@ public struct PanelSettings: Sendable, Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case collapsedModules, showsHistoryChart, defaultHistoryRange, showsAlertColors, moduleOrder, showsToday
-        case showsDeveloperTools, showsLiveChip, statusLine, hiddenModules, hiddenElements
+        case showsDeveloperTools, showsLiveChip, showsGauges, opensOnAlert, statusLine, hiddenModules, hiddenElements
     }
 
     /// Decoded leniently, and settings files written before the panel pane was removed
@@ -872,6 +885,8 @@ public struct PanelSettings: Sendable, Codable, Equatable {
         showsToday = c.value(.showsToday, or: true)
         showsDeveloperTools = try? c.decodeIfPresent(Bool.self, forKey: .showsDeveloperTools)
         showsLiveChip = c.value(.showsLiveChip, or: false)
+        showsGauges = c.value(.showsGauges, or: false)
+        opensOnAlert = c.value(.opensOnAlert, or: true)
         statusLine = c.value(.statusLine, or: .always)
         hiddenModules = c.value(.hiddenModules, or: [])
         // Read one by one, so a piece a newer build removed drops out instead of

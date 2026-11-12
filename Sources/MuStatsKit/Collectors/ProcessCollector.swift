@@ -16,14 +16,14 @@ public final class ProcessCollector: MetricSource {
     private static let rowLimit = 50
     /// Ranked by CPU, the top 50 miss anything idle, and the biggest memory users
     /// usually are idle: an editor left open holds gigabytes at 0%. These extra rows
-    /// are the largest resident sets outside the CPU cut, so a memory-ranked list has
+    /// are the largest footprints outside the CPU cut, so a memory-ranked list has
     /// the right processes to rank.
     private static let memoryRowLimit = 10
-    /// The first pass ranks on resident size, but the row shows phys_footprint, and a
-    /// process whose footprint is mostly compressed pages can rank low on one and top
-    /// on the other. Reading rusage for every process would double the collector's
-    /// cost, so instead twice the tail is fetched and trimmed on the displayed figure.
-    private static let memoryCandidateLimit = 20
+    /// How many apps reach the UI on each of the three figures they are ranked by.
+    private static let appLimit = 8
+    /// Distinct executables remembered before the table is rebuilt. A build can run
+    /// thousands of short-lived tools from as many paths over a day.
+    private static let appTableLimit = 4_096
 
     /// Cumulative per-process counters carried between samples, keyed by pid.
     private struct Baseline {
@@ -34,16 +34,33 @@ public final class ProcessCollector: MetricSource {
         var energy: UInt64
         var hasIO: Bool
         var seenAt: UInt64
+        /// Index into `apps` of the app this process belongs to. Resolved once, from
+        /// its executable path, the first time the pid is seen.
+        var app: Int32
     }
 
     /// Just enough to rank a process without building a String for one we will drop.
     private struct Candidate {
         var pid: pid_t
         var cpuPercent: Double
-        /// Resident size, not phys_footprint: it comes free with the task info every
-        /// process is already read for, and it only has to pick which rows get the
-        /// real figure from rusage in the second pass.
-        var residentBytes: UInt64
+        /// phys_footprint, the figure Activity Monitor's "Memory" column shows: it
+        /// counts compressed and IOKit-mapped pages and excludes shared clean ones,
+        /// so it and the resident size disagree by hundreds of megabytes on browsers.
+        var memoryBytes: UInt64
+        var watts: Double?
+        var readRate: Double?
+        var writeRate: Double?
+    }
+
+    /// One app's processes, summed over a sample.
+    private struct AppTotal {
+        var processCount = 0
+        var cpuPercent = 0.0
+        var memoryBytes: UInt64 = 0
+        var watts = 0.0
+        var hasWatts = false
+        var leaderPID: pid_t = 0
+        var leaderCPU = -1.0
     }
 
     private var baselines: [pid_t: Baseline] = [:]
@@ -54,6 +71,10 @@ public final class ProcessCollector: MetricSource {
     private var pidBuffer: [pid_t] = []
     private var ownPIDBuffer: [pid_t] = []
     private var candidates: [Candidate] = []
+    /// Every app or plain executable seen, by the path that identifies it.
+    private var apps: [(path: String, name: String)] = []
+    private var appIndex: [String: Int32] = [:]
+    private var appTotals: [AppTotal] = []
     /// μStats itself. Counted in the totals but never listed: opening the panel is what
     /// makes it sample fast, so it would otherwise top the very list the user opened
     /// the panel to read, every time, for a cost they caused by looking.
@@ -74,6 +95,8 @@ public final class ProcessCollector: MetricSource {
         pathBuffer = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
         candidates.reserveCapacity(1024)
         baselines.removeAll(keepingCapacity: true)
+        apps.removeAll(keepingCapacity: true)
+        appIndex.removeAll(keepingCapacity: true)
         generation = 0
         threadZoneReadable = true
     }
@@ -88,6 +111,9 @@ public final class ProcessCollector: MetricSource {
         pidBuffer = []
         ownPIDBuffer = []
         candidates = []
+        apps = []
+        appIndex = [:]
+        appTotals = []
         pathBuffer = []
     }
 
@@ -118,6 +144,8 @@ public final class ProcessCollector: MetricSource {
 
         generation &+= 1
         candidates.removeAll(keepingCapacity: true)
+        if apps.count > Self.appTableLimit { forgetApps() }
+        appTotals.removeAll(keepingCapacity: true)
 
         var taskInfo = proc_taskinfo()
         let taskInfoSize = Int32(MemoryLayout<proc_taskinfo>.size)
@@ -148,14 +176,54 @@ public final class ProcessCollector: MetricSource {
             if let previous, !rebaselining, cpuTime >= previous.cpuTime {
                 percent = Double(cpuTime - previous.cpuTime) * tickSeconds / context.elapsed * 100
             }
-            baselines[pid] = Baseline(cpuTime: cpuTime,
-                                      diskRead: previous?.diskRead ?? 0,
-                                      diskWrite: previous?.diskWrite ?? 0,
-                                      energy: previous?.energy ?? 0,
-                                      hasIO: previous?.hasIO ?? false,
-                                      seenAt: generation)
-            candidates.append(Candidate(pid: pid, cpuPercent: percent,
-                                        residentBytes: taskInfo.pti_resident_size))
+
+            // rusage for every process, not only the rows shown: an app is the sum of
+            // its processes, and forty idle browser helpers never reach a top-fifty
+            // list. Measured at 1.3 ms for 900 processes, against 0.4 ms for the task
+            // info above; paid only while something is reading the process list.
+            var memoryBytes = taskInfo.pti_resident_size
+            var watts: Double?
+            var readRate: Double?
+            var writeRate: Double?
+            var diskRead = previous?.diskRead ?? 0
+            var diskWrite = previous?.diskWrite ?? 0
+            var energy = previous?.energy ?? 0
+            var hasIO = previous?.hasIO ?? false
+            var usage = rusage_info_v6()
+            // V6 rather than V4 for `ri_energy_nj`: the same call and the same copy,
+            // with the energy the kernel's power model has charged the process.
+            let usageOK = withUnsafeMutablePointer(to: &usage) {
+                $0.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) {
+                    proc_pid_rusage(pid, RUSAGE_INFO_V6, $0)
+                }
+            } == 0
+            if usageOK {
+                memoryBytes = usage.ri_phys_footprint
+                if hasIO, !rebaselining {
+                    if usage.ri_diskio_bytesread >= diskRead {
+                        readRate = Double(usage.ri_diskio_bytesread - diskRead) / context.elapsed
+                    }
+                    if usage.ri_diskio_byteswritten >= diskWrite {
+                        writeRate = Double(usage.ri_diskio_byteswritten - diskWrite) / context.elapsed
+                    }
+                    // Nanojoules over seconds is nanowatts. Average power over the
+                    // interval, which is what "using significant energy" means; the
+                    // instantaneous figure would rank whoever woke up last.
+                    if usage.ri_energy_nj >= energy {
+                        watts = Double(usage.ri_energy_nj - energy) / context.elapsed / 1_000_000_000
+                    }
+                }
+                diskRead = usage.ri_diskio_bytesread
+                diskWrite = usage.ri_diskio_byteswritten
+                energy = usage.ri_energy_nj
+                hasIO = true
+            }
+            let app = previous.flatMap { $0.app >= 0 ? $0.app : nil } ?? resolveApp(pid)
+            baselines[pid] = Baseline(cpuTime: cpuTime, diskRead: diskRead, diskWrite: diskWrite,
+                                      energy: energy, hasIO: hasIO, seenAt: generation, app: app)
+            candidates.append(Candidate(pid: pid, cpuPercent: percent, memoryBytes: memoryBytes,
+                                        watts: watts, readRate: readRate, writeRate: writeRate))
+            total(app: app, pid: pid, cpuPercent: percent, memoryBytes: memoryBytes, watts: watts)
         }
 
         // Without this the dictionary would accumulate an entry for every process the
@@ -176,19 +244,16 @@ public final class ProcessCollector: MetricSource {
         var rows: [ProcessRow] = []
         rows.reserveCapacity(Self.rowLimit + Self.memoryRowLimit)
         for candidate in candidates.prefix(Self.rowLimit) {
-            if let row = buildRow(candidate, elapsed: context.elapsed) { rows.append(row) }
+            if let row = buildRow(candidate) { rows.append(row) }
         }
 
         // Rows stay in CPU order end to end: the memory picks all sit below the CPU
         // cut by construction, and are re-sorted among themselves so the tail of the
         // list is ordered the same way as its head.
         if candidates.count > Self.rowLimit {
-            candidates[Self.rowLimit...].sort { $0.residentBytes > $1.residentBytes }
-            let tailEnd = min(candidates.count, Self.rowLimit + Self.memoryCandidateLimit)
-            var tail = candidates[Self.rowLimit..<tailEnd]
-                .compactMap { buildRow($0, elapsed: context.elapsed) }
-            tail.sort { $0.memoryBytes > $1.memoryBytes }
-            tail.removeLast(max(0, tail.count - Self.memoryRowLimit))
+            candidates[Self.rowLimit...].sort { $0.memoryBytes > $1.memoryBytes }
+            let tailEnd = min(candidates.count, Self.rowLimit + Self.memoryRowLimit)
+            var tail = candidates[Self.rowLimit..<tailEnd].compactMap { buildRow($0) }
             tail.sort { $0.cpuPercent > $1.cpuPercent }
             rows.append(contentsOf: tail)
         }
@@ -199,6 +264,7 @@ public final class ProcessCollector: MetricSource {
         // the UI, so they must not disagree by 40%. See CPUCollector for the caveats
         // on mach_zone_info; the summed figure is the fallback.
         return .value(ProcessSnapshot(processes: rows,
+                                      apps: leadingApps(),
                                       totalProcessCount: pidCount,
                                       totalThreadCount: liveThreadCount() ?? totalThreads))
     }
@@ -232,9 +298,84 @@ public final class ProcessCollector: MetricSource {
         return nil
     }
 
-    /// Second pass, run only for the rows that will actually be displayed: names,
-    /// paths and rusage cost roughly as much again as ranking every process did.
-    private func buildRow(_ candidate: Candidate, elapsed: TimeInterval) -> ProcessRow? {
+    // MARK: Apps
+
+    /// The app `pid` belongs to, as an index into `apps`, adding it when it is new.
+    ///
+    /// Everything under one `.app` is that app: Chrome's renderers, Xcode's compilers.
+    /// A plain executable stands for itself, and every instance of it is one entry,
+    /// so nine `swift-frontend` are one line and not nine.
+    private func resolveApp(_ pid: pid_t) -> Int32 {
+        let length = pathBuffer.withUnsafeMutableBufferPointer {
+            proc_pidpath(pid, $0.baseAddress, UInt32($0.count))
+        }
+        let path: String
+        let name: String
+        if length > 0 {
+            let executable = pathBuffer.withUnsafeBufferPointer { String(cString: $0.baseAddress!) }
+            (path, name) = AppUsage.identity(forExecutable: executable)
+        } else {
+            // No path to group by: the process is its own entry under its short name.
+            name = ProcessName.of(pid) ?? "pid \(pid)"
+            path = name
+        }
+        if let known = appIndex[path] { return known }
+        let index = Int32(apps.count)
+        apps.append((path, name))
+        appIndex[path] = index
+        return index
+    }
+
+    private func total(app: Int32, pid: pid_t, cpuPercent: Double, memoryBytes: UInt64, watts: Double?) {
+        let index = Int(app)
+        if appTotals.count <= index {
+            appTotals.append(contentsOf: repeatElement(AppTotal(), count: index + 1 - appTotals.count))
+        }
+        appTotals[index].processCount += 1
+        appTotals[index].cpuPercent += cpuPercent
+        appTotals[index].memoryBytes += memoryBytes
+        if let watts {
+            appTotals[index].watts += watts
+            appTotals[index].hasWatts = true
+        }
+        if cpuPercent > appTotals[index].leaderCPU {
+            appTotals[index].leaderCPU = cpuPercent
+            appTotals[index].leaderPID = pid
+        }
+    }
+
+    /// The apps leading on CPU, memory or energy, in CPU order. An app that tops any
+    /// one of the three is in the list, so whichever figure the reader sorts by has
+    /// its leaders.
+    private func leadingApps() -> [AppUsage] {
+        let live = appTotals.indices.filter { appTotals[$0].processCount > 0 }
+        var picked = Set<Int>()
+        func take(_ areInOrder: (AppTotal, AppTotal) -> Bool) {
+            picked.formUnion(live.sorted { areInOrder(appTotals[$0], appTotals[$1]) }.prefix(Self.appLimit))
+        }
+        take { $0.cpuPercent > $1.cpuPercent }
+        take { $0.memoryBytes > $1.memoryBytes }
+        take { $0.watts > $1.watts }
+        return picked.map { index in
+            let total = appTotals[index]
+            return AppUsage(path: apps[index].path, name: apps[index].name,
+                            processCount: total.processCount, cpuPercent: total.cpuPercent,
+                            memoryBytes: total.memoryBytes,
+                            watts: total.hasWatts ? total.watts : nil,
+                            leaderPID: total.leaderPID)
+        }.sorted { ($0.cpuPercent, $0.memoryBytes) > ($1.cpuPercent, $1.memoryBytes) }
+    }
+
+    /// Start the app table again. Every live pid re-resolves on the next sample.
+    private func forgetApps() {
+        apps.removeAll(keepingCapacity: true)
+        appIndex.removeAll(keepingCapacity: true)
+        for pid in baselines.keys { baselines[pid]?.app = -1 }
+    }
+
+    /// Second pass, run only for the rows that will actually be displayed: names and
+    /// paths cost roughly as much again as ranking every process did.
+    private func buildRow(_ candidate: Candidate) -> ProcessRow? {
         var all = proc_taskallinfo()
         let size = Int32(MemoryLayout<proc_taskallinfo>.size)
         let read = withUnsafeMutablePointer(to: &all) {
@@ -254,48 +395,6 @@ public final class ProcessCollector: MetricSource {
             ? pathBuffer.withUnsafeBufferPointer { String(cString: $0.baseAddress!) }
             : nil
 
-        var memoryBytes = all.ptinfo.pti_resident_size
-        var readRate: Double?
-        var writeRate: Double?
-        var watts: Double?
-
-        // V6 rather than V4 for `ri_energy_nj`: the same call and the same copy, with
-        // the energy the kernel's power model has charged the process on the end.
-        var usage = rusage_info_v6()
-        let usageOK = withUnsafeMutablePointer(to: &usage) {
-            $0.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) {
-                proc_pid_rusage(candidate.pid, RUSAGE_INFO_V6, $0)
-            }
-        } == 0
-
-        if usageOK {
-            // Activity Monitor's "Memory" column is phys_footprint, not RSS: it counts
-            // compressed and IOKit-mapped pages and excludes shared clean ones, so the
-            // two disagree by hundreds of megabytes on browsers.
-            memoryBytes = usage.ri_phys_footprint
-            if var previous = baselines[candidate.pid] {
-                if previous.hasIO, elapsed > 0.001 {
-                    if usage.ri_diskio_bytesread >= previous.diskRead {
-                        readRate = Double(usage.ri_diskio_bytesread - previous.diskRead) / elapsed
-                    }
-                    if usage.ri_diskio_byteswritten >= previous.diskWrite {
-                        writeRate = Double(usage.ri_diskio_byteswritten - previous.diskWrite) / elapsed
-                    }
-                    // Nanojoules over seconds is nanowatts. Average power over the
-                    // interval, which is what "using significant energy" means; the
-                    // instantaneous figure would rank whoever woke up last.
-                    if usage.ri_energy_nj >= previous.energy {
-                        watts = Double(usage.ri_energy_nj - previous.energy) / elapsed / 1_000_000_000
-                    }
-                }
-                previous.diskRead = usage.ri_diskio_bytesread
-                previous.diskWrite = usage.ri_diskio_byteswritten
-                previous.energy = usage.ri_energy_nj
-                previous.hasIO = true
-                baselines[candidate.pid] = previous
-            }
-        }
-
         let start = all.pbsd.pbi_start_tvsec > 0
             ? Date(timeIntervalSince1970: Double(all.pbsd.pbi_start_tvsec)
                    + Double(all.pbsd.pbi_start_tvusec) / 1_000_000)
@@ -306,13 +405,13 @@ public final class ProcessCollector: MetricSource {
                           name: name,
                           executablePath: path,
                           cpuPercent: candidate.cpuPercent,
-                          memoryBytes: memoryBytes,
+                          memoryBytes: candidate.memoryBytes,
                           threadCount: Int(all.ptinfo.pti_threadnum),
                           userName: userName(for: all.pbsd.pbi_uid),
                           startTime: start,
-                          energyImpact: watts,
-                          diskReadBytesPerSecond: readRate,
-                          diskWriteBytesPerSecond: writeRate,
+                          energyImpact: candidate.watts,
+                          diskReadBytesPerSecond: candidate.readRate,
+                          diskWriteBytesPerSecond: candidate.writeRate,
                           isAppleSignedSystem: path.map(Self.isSystemPath) ?? false)
     }
 

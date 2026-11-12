@@ -62,6 +62,8 @@ public struct HistoryChart: View {
     private let bandTint: Color
     private let height: CGFloat
     private let defaultRange: HistoryRange
+    /// Whether the hour and day windows draw this Mac's usual range behind the data.
+    private let showsUsual: Bool
     /// Nil until the user picks: the chart opens on the default range once there is
     /// enough data, and on the live span before that, so it never opens on a lone dot.
     @Binding private var range: HistoryRange?
@@ -83,6 +85,7 @@ public struct HistoryChart: View {
                 band: Color,
                 height: CGFloat = Design.Chart.detailHeight,
                 defaultRange: HistoryRange = .day,
+                showsUsual: Bool = false,
                 range: Binding<HistoryRange?>) {
         self.module = module
         self.history = history
@@ -93,6 +96,7 @@ public struct HistoryChart: View {
         self.bandTint = band
         self.height = height
         self.defaultRange = defaultRange
+        self.showsUsual = showsUsual
         self._range = range
     }
 
@@ -281,11 +285,11 @@ public struct HistoryChart: View {
         case .hour:
             // The day's own minutes, cut to the newest sixty: one tier answers
             // both windows, and the hour needs no separate accounting.
-            let minutes = day.series(module.key).trailing(60)
+            let minutes = day.series(module.key, trailing: 60)
             return Window(range: .hour, span: minutes.span, end: minutes.end, format: recent.format,
                           primary: Track(minutes: minutes, recent: recent),
-                          secondary: secondary.map { Track(minutes: day.series($0.key).trailing(60), recent: $0) },
-                          shade: shade.map { Track(minutes: day.series($0.key).trailing(60), recent: $0) },
+                          secondary: secondary.map { Track(minutes: day.series($0.key, trailing: 60), recent: $0) },
+                          shade: shade.map { Track(minutes: day.series($0.key, trailing: 60), recent: $0) },
                           domain: module.domain, naturalUpperBound: module.key.naturalUpperBound)
         case .day:
             let minutes = day.series(module.key)
@@ -311,6 +315,7 @@ public struct HistoryChart: View {
         .frame(height: height)
         .overlay(alignment: .topLeading) { boundLabel(window) }
         .overlay(alignment: .bottomLeading) { floorLabel(window) }
+        .overlay(alignment: .topTrailing) { usualLegend(window) }
         .overlay {
             if window.isEmpty {
                 SwiftUI.Text(window.range.collectingText)
@@ -370,6 +375,12 @@ public struct HistoryChart: View {
                     BandLayer(plot: plot, lineTint: lineTint, bandTint: bandTint,
                               style: settings.style, levelsWhenSparse: window.range == .recent,
                               scrubbed: scrub.map { plot.column(at: rect.minX + rect.width * CGFloat($0.fraction)) })
+                    // Over the data, not under it: the filled style paints the area below
+                    // the line, and a wash behind that area is a wash nobody sees.
+                    if let usual = usualPath(window, plot: plot) {
+                        PlotShape(usual).fill(lineTint.opacity(UsualBand.opacity))
+                            .allowsHitTesting(false)
+                    }
                     if let scrub {
                         crosshair(plot, at: scrub.fraction)
                     }
@@ -386,6 +397,42 @@ public struct HistoryChart: View {
                     }
                 }
             }
+        }
+    }
+
+    /// Whether this window draws the usual range: a series that has one, on a scale
+    /// that does not move with the data, over a span short enough for "this hour" to
+    /// mean something. Thirty days of hourly habit behind thirty days of hours would
+    /// be the data drawn twice.
+    private func drawsUsual(_ window: Window) -> Bool {
+        showsUsual && window.range != .month && !window.scale.isDerived
+            && Usual.isDrawn(for: module.key)
+    }
+
+    private func usualPath(_ window: Window, plot: BandPlot) -> Path? {
+        guard drawsUsual(window) else { return nil }
+        let path = UsualBand.path(plot: plot, key: module.key, month: month,
+                                  date: { window.date(at: $0) })
+        return path.isEmpty ? nil : path
+    }
+
+    /// Names the wash, in the corner the data visits least. Without it the band is a
+    /// shape the reader has to guess at.
+    @ViewBuilder
+    private func usualLegend(_ window: Window) -> some View {
+        if drawsUsual(window), !window.isEmpty,
+           Usual.range(module.key, month: month, at: window.end) != nil {
+            HStack(spacing: Design.Space.xxs) {
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(lineTint.opacity(UsualBand.opacity * 1.5))
+                    .frame(width: 8, height: 5)
+                SwiftUI.Text("usual")
+                    .font(Design.Text.micro)
+                    .foregroundStyle(Design.Palette.tertiaryText)
+            }
+            .padding(.trailing, Design.Space.xxs)
+            .padding(.top, 1)
+            .accessibilityHidden(true)
         }
     }
 
@@ -662,7 +709,16 @@ struct BandLayer: View {
         case .bars:
             PlotShape(plot.barPath(newest: marked)).fill(lineTint)
         case .filledLine, .line:
-            PlotShape(style == .filledLine ? plot.filledBandPath() : plot.bandPath()).fill(bandTint)
+            if style == .filledLine {
+                // Denser under the line and gone by the baseline: the fill says which
+                // side of the line is the quantity without becoming a slab the usual
+                // band and the grid have to be read through. Still one layer.
+                PlotShape(plot.filledBandPath())
+                    .fill(LinearGradient(colors: [bandTint.opacity(1.5), bandTint.opacity(0.25)],
+                                         startPoint: .top, endPoint: .bottom))
+            } else {
+                PlotShape(plot.bandPath()).fill(bandTint)
+            }
             PlotShape(plot.strokeMarksPath(lineWidth: Design.Chart.lineWidth, newest: marked))
 
                 .stroke(lineTint, style: StrokeStyle(lineWidth: Design.Chart.lineWidth,
@@ -754,11 +810,14 @@ public struct HistorySilhouette: View {
     private let tint: Color
     private let style: ChartStyle
     private let height: CGFloat
+    /// The month the usual range is read from, when the caller wants it drawn.
+    private let month: MinuteHistory?
 
     @Environment(\.metricFormatter) private var formatter
 
-    public init(_ module: ModuleHistory, day: MinuteHistory, tint: Color, style: ChartStyle,
-                height: CGFloat) {
+    public init(_ module: ModuleHistory, day: MinuteHistory, usualFrom month: MinuteHistory? = nil,
+                tint: Color, style: ChartStyle, height: CGFloat) {
+        self.month = month
         self.module = module
         self.minutes = day.series(module.key)
         self.secondary = module.secondary.map { day.series($0) }
@@ -792,10 +851,18 @@ public struct HistorySilhouette: View {
                         SecondaryLayer(plot: BandPlot(rect: rect, scale: scale, minutes: secondary),
                                        tint: tint)
                     }
-                    BandLayer(plot: BandPlot(rect: rect, scale: scale, minutes: minutes),
+                    let plot = BandPlot(rect: rect, scale: scale, minutes: minutes)
+                    BandLayer(plot: plot,
                               lineTint: tint,
                               bandTint: tint.opacity(Design.Chart.fillOpacity * 1.5),
                               style: style, levelsWhenSparse: false)
+                    if let month, !scale.isDerived, Usual.isDrawn(for: module.key) {
+                        let minutes = self.minutes
+                        PlotShape(UsualBand.path(plot: plot, key: module.key, month: month) {
+                            minutes.end.addingTimeInterval(-minutes.span * (1 - $0))
+                        })
+                        .fill(tint.opacity(UsualBand.opacity))
+                    }
                 }
             }
         }
@@ -852,5 +919,84 @@ extension PanelModule {
         case .thermal: return ModuleHistory(.cpuTemperature, domain: 30...100)
         case .processes, .system: return nil
         }
+    }
+}
+
+/// This Mac's usual range across a chart's window: for every column, the middle half
+/// of the same hour on the earlier days of the month.
+///
+/// Today's line is drawn over it, so the chart answers "is this a lot?" with the
+/// Mac's own habit instead of leaving the reader to remember yesterday. Read at the
+/// hour's middle and blended towards the next, so the band bends rather than steps:
+/// the step would be an artefact of hourly buckets, not something the Mac did.
+enum UsualBand {
+    static let opacity = 0.2
+    /// The thinnest the band is drawn, so a very regular Mac still shows one.
+    static let minimumHeight: CGFloat = 2
+
+    static func ranges(columns: Int, key: SeriesKey, month: MinuteHistory,
+                       date: (Double) -> Date) -> [UsualRange?] {
+        var hours: [Int: UsualRange?] = [:]
+        func hour(_ index: Int) -> UsualRange? {
+            if let known = hours[index] { return known }
+            let found = Usual.range(key, month: month,
+                                    at: Date(timeIntervalSince1970: (Double(index) + 0.5) * 3_600))
+            hours[index] = found
+            return found
+        }
+        return (0..<columns).map { column in
+            let fraction = columns > 1 ? Double(column) / Double(columns - 1) : 1
+            let position = date(fraction).timeIntervalSince1970 / 3_600 - 0.5
+            let lower = Int(position.rounded(.down))
+            let weight = position - Double(lower)
+            switch (hour(lower), hour(lower + 1)) {
+            case let (a?, b?):
+                return UsualRange(low: a.low + (b.low - a.low) * weight,
+                                  median: a.median + (b.median - a.median) * weight,
+                                  high: a.high + (b.high - a.high) * weight,
+                                  days: min(a.days, b.days))
+            case let (a?, nil): return a
+            case let (nil, b?): return b
+            case (nil, nil): return nil
+            }
+        }
+    }
+
+    static func path(plot: BandPlot, key: SeriesKey, month: MinuteHistory,
+                     date: (Double) -> Date) -> Path {
+        let ranges = ranges(columns: plot.count, key: key, month: month, date: date)
+        var path = Path()
+        var index = 0
+        while index < ranges.count {
+            guard ranges[index] != nil else { index += 1; continue }
+            var end = index
+            while end + 1 < ranges.count, ranges[end + 1] != nil { end += 1 }
+            func edges(_ column: Int) -> (top: CGFloat, bottom: CGFloat) {
+                let range = ranges[column]!
+                var top = plot.y(range.high)
+                var bottom = plot.y(range.low)
+                if bottom - top < minimumHeight {
+                    let middle = (top + bottom) / 2
+                    top = middle - minimumHeight / 2
+                    bottom = middle + minimumHeight / 2
+                }
+                return (top, bottom)
+            }
+            // A lone column still gets a sliver, or an hour that stands alone vanishes.
+            let left = plot.x(index) - (index == end ? 1 : 0)
+            let right = plot.x(end) + (index == end ? 1 : 0)
+            path.move(to: CGPoint(x: left, y: edges(index).top))
+            for column in index...end where column != index {
+                path.addLine(to: CGPoint(x: column == end ? right : plot.x(column), y: edges(column).top))
+            }
+            if index == end { path.addLine(to: CGPoint(x: right, y: edges(index).top)) }
+            for column in stride(from: end, through: index, by: -1) {
+                let x = column == end ? right : (column == index ? left : plot.x(column))
+                path.addLine(to: CGPoint(x: x, y: edges(column).bottom))
+            }
+            path.closeSubpath()
+            index = end + 1
+        }
+        return path
     }
 }

@@ -676,13 +676,95 @@ public struct ProcessRow: Sendable, Equatable, Hashable, Identifiable {
     }
 }
 
+/// One app with everything it runs counted in: the bill, not the line items.
+///
+/// A process list answers "which process", and the reader's question is "which app".
+/// Chrome at 9 GB is forty processes of 200 MB, none of which tops a list alone.
+public struct AppUsage: Sendable, Equatable, Hashable, Identifiable {
+    public var id: String { path }
+    /// The `.app` bundle, or the executable for a process outside one. Identity, and
+    /// where the icon comes from.
+    public var path: String
+    public var name: String
+    public var processCount: Int
+    /// Percent of one core, summed, so it can exceed 100.
+    public var cpuPercent: Double
+    public var memoryBytes: UInt64
+    /// Nil until at least one of its processes has two samples to difference.
+    public var watts: Double?
+    /// Its busiest process, for an action that needs one pid.
+    public var leaderPID: Int32
+
+    public init(path: String, name: String, processCount: Int = 1, cpuPercent: Double = 0,
+                memoryBytes: UInt64 = 0, watts: Double? = nil, leaderPID: Int32 = 0) {
+        self.path = path
+        self.name = name
+        self.processCount = processCount
+        self.cpuPercent = cpuPercent
+        self.memoryBytes = memoryBytes
+        self.watts = watts
+        self.leaderPID = leaderPID
+    }
+
+    public var isBundle: Bool { path.hasSuffix(".app") }
+
+    /// What an executable is grouped under and called.
+    ///
+    /// "/Applications/Google Chrome.app/Contents/Frameworks/…/Google Chrome Helper"
+    /// is "/Applications/Google Chrome.app", named "Google Chrome": the outermost
+    /// bundle, so a helper that is itself a nested `.app` still lands on its owner.
+    /// Anything outside a bundle is its own path, named by its last component.
+    public static func identity(forExecutable path: String) -> (path: String, name: String) {
+        let bundle: String? = path.range(of: ".app/")
+            .map { String(path[path.startIndex..<$0.lowerBound]) + ".app" }
+            ?? (path.hasSuffix(".app") ? path : nil)
+        if let bundle {
+            let file = bundle.split(separator: "/").last.map(String.init) ?? bundle
+            return (bundle, String(file.dropLast(4)))
+        }
+        return (path, path.split(separator: "/").last.map(String.init) ?? path)
+    }
+
+    /// The bills for a list of processes: what a fixture or a caller without the
+    /// collector's full pass can offer. Sums only the processes it is given.
+    public static func grouping(_ processes: [ProcessRow]) -> [AppUsage] {
+        var order: [String] = []
+        var totals: [String: AppUsage] = [:]
+        var leaders: [String: Double] = [:]
+        for process in processes {
+            let identity: (path: String, name: String) = process.executablePath
+                .map { Self.identity(forExecutable: $0) } ?? (process.name, process.name)
+            var usage = totals[identity.path] ?? {
+                order.append(identity.path)
+                return AppUsage(path: identity.path, name: identity.name, processCount: 0)
+            }()
+            usage.processCount += 1
+            usage.cpuPercent += process.cpuPercent
+            usage.memoryBytes += process.memoryBytes
+            if let watts = process.energyImpact { usage.watts = (usage.watts ?? 0) + watts }
+            if process.cpuPercent > leaders[identity.path] ?? -1 {
+                leaders[identity.path] = process.cpuPercent
+                usage.leaderPID = process.pid
+            }
+            totals[identity.path] = usage
+        }
+        return order.compactMap { totals[$0] }
+            .sorted { ($0.cpuPercent, $0.memoryBytes) > ($1.cpuPercent, $1.memoryBytes) }
+    }
+}
+
 public struct ProcessSnapshot: Sendable, Equatable {
     public var processes: [ProcessRow]
+    /// The apps leading on CPU, memory or energy, each with all of its processes
+    /// summed, in CPU order.
+    public var apps: [AppUsage]
     public var totalProcessCount: Int
     public var totalThreadCount: Int
 
-    public init(processes: [ProcessRow] = [], totalProcessCount: Int = 0, totalThreadCount: Int = 0) {
+    public init(processes: [ProcessRow] = [], apps: [AppUsage]? = nil,
+                totalProcessCount: Int = 0, totalThreadCount: Int = 0) {
         self.processes = processes
+        self.apps = apps ?? AppUsage.grouping(processes)
         self.totalProcessCount = totalProcessCount
         self.totalThreadCount = totalThreadCount
     }

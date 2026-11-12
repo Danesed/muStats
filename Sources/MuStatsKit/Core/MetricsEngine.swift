@@ -18,6 +18,9 @@ public final class MetricsEngine {
 
     /// The last 24 hours, one bucket per minute. Survives sleep and lock: see
     /// `setSuspensionReason`.
+    /// The running macOS and when it last changed, set by the app at launch. Nil in a
+    /// test or a render that does not supply one.
+    public var systemUpdate: SystemUpdateRecord?
     public private(set) var dayHistory = MinuteHistory()
     public private(set) var dayHistoryRevision: UInt64 = 0
 
@@ -519,7 +522,9 @@ public final class MetricsEngine {
     static let memoryNoteShare = 0.1
 
     private func noteProcesses(_ processes: ProcessSnapshot, in s: SystemSnapshot) {
-        let rows = processes.processes
+        // By app: the day remembers who to blame, and that is the app whose forty
+        // helpers added up, not whichever one of them happened to be on top.
+        let rows = processes.apps
         if let cpu = s.cpu.value,
            let top = rows.max(by: { $0.cpuPercent < $1.cpuPercent }) {
             let cores = Double(max(cpu.perCore.count, 1))

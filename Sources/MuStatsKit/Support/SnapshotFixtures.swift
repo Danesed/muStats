@@ -314,28 +314,42 @@ public enum SnapshotFixtures {
     }
 
     public static func processes(topCPU: Double = 46.2) -> ProcessSnapshot {
-        let names: [(String, Double, UInt64, Int)] = [
-            ("Xcode", topCPU, 4_284_432_384, 41),
-            ("kernel_task", topCPU * 0.42, 1_842_216_960, 612),
-            ("WindowServer", topCPU * 0.31, 968_884_224, 28),
-            ("Google Chrome Helper (Renderer)", topCPU * 0.24, 742_391_808, 22),
-            ("swift-frontend", topCPU * 0.19, 1_284_046_848, 9),
-            ("Music", topCPU * 0.08, 412_663_808, 17),
-            ("mds_stores", topCPU * 0.05, 186_646_528, 11),
+        let chrome = "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework"
+            + "/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)"
+        let names: [(String, String, Double, UInt64, Int)] = [
+            ("Xcode", "/Applications/Xcode.app/Contents/MacOS/Xcode", topCPU, 4_284_432_384, 41),
+            ("kernel_task", "/kernel_task", topCPU * 0.42, 1_842_216_960, 612),
+            ("WindowServer", "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+             topCPU * 0.31, 968_884_224, 28),
+            ("Google Chrome Helper (Renderer)", chrome, topCPU * 0.24, 742_391_808, 22),
+            ("swift-frontend", "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain"
+             + "/usr/bin/swift-frontend", topCPU * 0.19, 1_284_046_848, 9),
+            ("Music", "/System/Applications/Music.app/Contents/MacOS/Music", topCPU * 0.08, 412_663_808, 17),
+            ("mds_stores", "/System/Library/Frameworks/CoreServices.framework/mds_stores",
+             topCPU * 0.05, 186_646_528, 11),
         ]
-        return ProcessSnapshot(
-            processes: names.enumerated().map { index, entry in
-                ProcessRow(pid: Int32(420 + index * 137), parentPID: 1, name: entry.0,
-                           executablePath: "/Applications/\(entry.0).app",
-                           cpuPercent: entry.1, memoryBytes: entry.2,
-                           threadCount: entry.3, userName: "demo",
-                           startTime: referenceDate.addingTimeInterval(-3_600),
-                           // Roughly what Apple silicon charges per percent of a core.
-                           energyImpact: entry.1 * 0.045)
-            },
-            totalProcessCount: 648,
-            totalThreadCount: 2_314
-        )
+        let rows = names.enumerated().map { index, entry in
+            ProcessRow(pid: Int32(420 + index * 137), parentPID: 1, name: entry.0,
+                       executablePath: entry.1,
+                       cpuPercent: entry.2, memoryBytes: entry.3,
+                       threadCount: entry.4, userName: "demo",
+                       startTime: referenceDate.addingTimeInterval(-3_600),
+                       // Roughly what Apple silicon charges per percent of a core.
+                       energyImpact: entry.2 * 0.045)
+        }
+        // The bills count every process, the forty the row list never shows included,
+        // so they are larger than the sum of the rows above.
+        var apps = AppUsage.grouping(rows)
+        let extras: [String: (count: Int, memory: UInt64)] = [
+            "Xcode": (23, 1_610_612_736), "Google Chrome": (41, 8_053_063_680), "Music": (3, 96_468_992),
+        ]
+        for index in apps.indices {
+            guard let extra = extras[apps[index].name] else { continue }
+            apps[index].processCount = extra.count
+            apps[index].memoryBytes += extra.memory
+        }
+        return ProcessSnapshot(processes: rows, apps: apps,
+                               totalProcessCount: 648, totalThreadCount: 2_314)
     }
 
     public static func system() -> SystemInfoSnapshot {
@@ -470,9 +484,11 @@ public enum SnapshotFixtures {
         let end = referenceDate
         let firstCollected = collectedHours.map { max(0, capacity - $0) } ?? 0
         // A fixed zone, so the day shape and the last hour do not depend on where the
-        // machine running the tests or the renders happens to be.
+        // machine running the tests or the renders happens to be. Fourteen hours ahead
+        // of UTC, which puts the reference date at two in the afternoon: a month that
+        // ends mid working day has a usual range for the hour it ends on.
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
+        calendar.timeZone = TimeZone(secondsFromGMT: 14 * 3_600)!
         for index in 0..<capacity {
             let t = Double(index) / Double(capacity)
             let date = end.addingTimeInterval(-Double(capacity - index) * bucketDuration)
@@ -486,7 +502,10 @@ public enum SnapshotFixtures {
             let workingHours = (9...18).contains(hour)
             let awake = hour >= 8 && hour <= 23
             guard awake else { continue }
-            let work = workingHours && !weekend ? 0.20 : 0.05
+            // No two days alike: some busier, some quieter, so an hour of the day has
+            // a range across the month and not one value repeated.
+            let mood = 1 + 0.45 * sin(Double(index / 24) * 1.7)
+            let work = (workingHours && !weekend ? 0.20 : 0.05) * mood
             let wobble = 0.04 * sin(t * Double.pi * 120) + 0.03 * sin(t * Double.pi * 31 + 0.4)
             var spike: Double = 0
             if t > 0.82 && t < 0.85 { spike = 0.45 * (1 - abs(t - 0.835) / 0.015) }
@@ -498,7 +517,7 @@ public enum SnapshotFixtures {
                 month.record(.cpuSystem, sample * 0.38)
                 month.record(.cpuPerformance, min(0.99, sample * 1.15))
                 month.record(.cpuEfficiency, sample * 0.7)
-                month.record(.memoryUsed, min(0.95, 0.40 + 0.18 * t + 0.03 * sin(t * Double.pi * 11) * jitter))
+                month.record(.memoryUsed, min(0.95, 0.40 + 0.18 * t + 0.05 * (mood - 1) + 0.03 * sin(t * Double.pi * 11) * jitter))
                 month.record(.memoryPressure, 0.2 + 0.10 * sin(t * Double.pi * 5) * jitter)
                 month.record(.gpuUtilization, max(0, 0.04 + 0.4 * spike + 0.06 * sin(t * Double.pi * 47) * jitter))
                 month.record(.networkDownload, max(0, (400_000 + 1_800_000 * work * 4 * abs(sin(t * Double.pi * 53))) * jitter))
@@ -508,6 +527,8 @@ public enum SnapshotFixtures {
                 month.record(.batteryPercent, max(8, min(100, 55 + 40 * sin(t * Double.pi * 60))))
                 month.record(.batteryPlugged, workingHours ? 1 : 0)
                 month.record(.cpuTemperature, 40 + 20 * sample)
+                // Filling by about a third of a percent of the volume a day.
+                month.record(.diskUsed, 0.53 + 0.10 * t)
                 month.record(.fanRPM, sample > 0.45 ? 1_400 + 3_200 * sample : 0)
             }
         }
