@@ -627,18 +627,93 @@ struct MenuBarStabilizerTests {
 
 @Suite("The live chip fits any chip")
 struct LiveChipFitTests {
-    @Test("four cores draw large, an Ultra's many still fit")
-    func fit() {
-        let block = CGSize(width: 140, height: 130)
-        let small = PanelLiveChip.fit(count: 4, in: block, gap: 4, maxCell: 28)
-        #expect(small.cell == 28)
-        let ultra = PanelLiveChip.fit(count: 24, in: block, gap: 4, maxCell: 28)
-        let rows = (24 + ultra.columns - 1) / ultra.columns
-        #expect(ultra.cell > 0)
-        #expect(CGFloat(ultra.columns) * ultra.cell + CGFloat(ultra.columns - 1) * 4 <= block.width)
-        #expect(CGFloat(rows) * ultra.cell + CGFloat(rows - 1) * 4 <= block.height)
-        let gpu = PanelLiveChip.fit(count: 80, in: CGSize(width: 140, height: 90), gap: 3, maxCell: 14)
-        #expect(gpu.cell >= 5)
+    private let size = CGSize(width: 348, height: 268)
+
+    private func check(_ block: ChipFloorplan.Block, count: Int, sourceLocation: SourceLocation = #_sourceLocation) {
+        #expect(block.cells.count == count, sourceLocation: sourceLocation)
+        for (index, cell) in block.cells.enumerated() {
+            #expect(block.frame.contains(cell), "cell \(index) leaves its block", sourceLocation: sourceLocation)
+            #expect(cell.width >= 2 && cell.height >= 2, sourceLocation: sourceLocation)
+            #expect(!cell.intersects(block.label), "cell \(index) sits under the label", sourceLocation: sourceLocation)
+            for other in block.cells[(index + 1)...] {
+                #expect(!cell.intersects(other), sourceLocation: sourceLocation)
+            }
+        }
+    }
+
+    @Test("four cores draw large, an Ultra's many still fit, and no two overlap")
+    func cores() throws {
+        let base = ChipFloorplan.make(size: size, performance: 4, efficiency: 4, gpu: 8)
+        check(base.performance, count: 4)
+        check(try #require(base.efficiency), count: 4)
+        check(base.gpu, count: 8)
+        // A performance core is the larger core.
+        let performanceCell = base.performance.cells[0]
+        let efficiencyCell = (try #require(base.efficiency)).cells[0]
+        #expect(performanceCell.width * performanceCell.height > efficiencyCell.width * efficiencyCell.height)
+        #expect(base.performance.cells[0].width >= 13, "large enough to draw its structure")
+
+        let ultra = ChipFloorplan.make(size: size, performance: 24, efficiency: 8, gpu: 80)
+        check(ultra.performance, count: 24)
+        check(try #require(ultra.efficiency), count: 8)
+        check(ultra.gpu, count: 80)
+    }
+
+    @Test("a Mac with one kind of core gives the whole column to it")
+    func oneKind() {
+        let intel = ChipFloorplan.make(size: size, performance: 8, efficiency: 0, gpu: 1)
+        #expect(intel.efficiency == nil)
+        check(intel.performance, count: 8)
+        #expect(intel.performance.frame.height > 150)
+    }
+
+    @Test("every part stays on the die or beside it, inside the package")
+    func bounds() throws {
+        let plan = ChipFloorplan.make(size: size, performance: 6, efficiency: 6, gpu: 18)
+        let package = CGRect(origin: .zero, size: size)
+        #expect(package.contains(plan.die))
+        for block in [plan.performance, try #require(plan.efficiency), plan.gpu] {
+            #expect(plan.die.contains(block.frame))
+        }
+        #expect(plan.die.contains(plan.nameplate))
+        #expect(plan.modules.count == 2)
+        for module in plan.modules {
+            #expect(package.contains(module.frame))
+            #expect(!module.frame.intersects(plan.die), "memory sits beside the die, not on it")
+            check(module, count: ChipFloorplan.memoryColumns * ChipFloorplan.memoryRows)
+        }
+        #expect(plan.memoryCells.count == 40)
+        // A module fills from the bottom.
+        #expect(plan.modules[0].cells[0].minY > plan.modules[0].cells.last!.minY)
+    }
+
+    @Test("the memory cells fill with app, then wired, then compressed")
+    func memoryFill() {
+        let memory = MemorySnapshot(totalBytes: 1_000, appBytes: 400, wiredBytes: 200, compressedBytes: 100,
+                                    usedBytes: 700)
+        let fill = PanelLiveChip.memoryFill(memory, cells: 40)
+        #expect(fill.app == 16)
+        #expect(fill.wired == 24)
+        #expect(fill.compressed == 28)
+        #expect(PanelLiveChip.memoryFill(MemorySnapshot(), cells: 40) == (0, 0, 0))
+    }
+
+    @Test("a run of cells lights whole cells and the fraction of the one a bound lands in")
+    func cells() {
+        let cells = (0..<4).map { CGRect(x: CGFloat($0) * 10, y: 0, width: 8, height: 8) }
+        let lit = ChipCells(cells: cells, range: 1...2.5, radius: 0).path(in: .zero).boundingRect
+        #expect(lit.minX == 10)
+        #expect(lit.maxX == 24, "half of the third cell")
+        #expect(ChipCells(cells: cells, range: 2...2, radius: 0).path(in: .zero).isEmpty)
+    }
+
+    @Test("an idle core is dim, not dark, and the die only warms when it is warm")
+    func lights() {
+        #expect(PanelLiveChip.brightness(0) > 0)
+        #expect(PanelLiveChip.brightness(1) < 1)
+        #expect(PanelLiveChip.brightness(0.5) > PanelLiveChip.brightness(0.2))
+        #expect(PanelLiveChip.warmth(40) == 0)
+        #expect(PanelLiveChip.warmth(100) > PanelLiveChip.warmth(70))
     }
 }
 
