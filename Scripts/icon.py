@@ -66,52 +66,6 @@ baseline = top + y1 * scale
 pen = SVGPathPen(glyphs)
 glyphs[name].draw(TransformPen(pen, (scale, 0, 0, -scale, left - x0 * scale, baseline)))
 mu = f'<path fill="{INK}" d="{pen.getCommands()}"/>'
-
-# "Stats", small, set beside the stem of the μ: the mark reads "μ" first and the
-# name second. Same family, as outlines, with the font's own spacing and kerning.
-WORD, WORD_SIZE = "Stats", 132
-
-
-def word_path(text: str, size: float, x: float, baseline_y: float):
-    cmap, k = font.getBestCmap(), size / font["head"].unitsPerEm
-    names = [cmap[ord(ch)] for ch in text]
-    kerning = {}
-    if "GPOS" in font:
-        for lookup in font["GPOS"].table.LookupList.Lookup:
-            for sub in lookup.SubTable:
-                if getattr(sub, "LookupType", None) == 9:
-                    sub = sub.ExtSubTable
-                if sub.__class__.__name__ != "PairPos":
-                    continue
-                if sub.Format == 1:
-                    for first, pairs in zip(sub.Coverage.glyphs, sub.PairSet):
-                        for pair in pairs.PairValueRecord:
-                            if pair.Value1 and pair.Value1.XAdvance:
-                                kerning.setdefault((first, pair.SecondGlyph), pair.Value1.XAdvance)
-                elif sub.Format == 2:
-                    covered = set(sub.Coverage.glyphs)
-                    for first in set(names) & covered:
-                        c1 = sub.ClassDef1.classDefs.get(first, 0)
-                        for second in set(names):
-                            c2 = sub.ClassDef2.classDefs.get(second, 0)
-                            value = sub.Class1Record[c1].Class2Record[c2].Value1
-                            if value and value.XAdvance:
-                                kerning.setdefault((first, second), value.XAdvance)
-    out = SVGPathPen(glyphs)
-    cursor = 0.0
-    for index, glyph in enumerate(names):
-        if index:
-            cursor += kerning.get((names[index - 1], glyph), 0)
-        glyphs[glyph].draw(TransformPen(out, (k, 0, 0, -k, x + cursor * k, baseline_y)))
-        cursor += glyphs[glyph].width
-    return out.getCommands(), cursor * k
-
-
-# The word sits in the corner the μ leaves open: right of the stem, under the bowl,
-# on the line where the stem ends.
-stem_right = left + 0.30 * width
-word_d, word_width = word_path(WORD, WORD_SIZE, stem_right + 16, top + height - 6)
-word = f'<path fill="{INK}" d="{word_d}"/>'
 dot = f'<circle cx="{left + width + gap + dot_r:.1f}" cy="{baseline - dot_r:.1f}" r="{dot_r}" fill="{CALM}"/>'
 
 
@@ -261,7 +215,7 @@ for old in assets.glob("*.svg"):
     old.unlink()
 (assets / "plan.svg").write_text(svg(plan))
 (assets / "clearing.svg").write_text(svg(clearing, clearing_defs))
-(assets / "mu.svg").write_text(svg(mu + word))
+(assets / "mu.svg").write_text(svg(mu))
 (assets / "dot.svg").write_text(svg(dot))
 
 
@@ -293,12 +247,12 @@ defs = defs.replace("</defs>", f'<clipPath id="tile"><rect x="{inset}" y="{inset
 
 
 def flat(detailed: bool) -> str:
-    """The whole icon. Below 64 pixels the floorplan and the word are noise, so the small sizes carry the μ and the dot alone."""
+    """The whole icon. Below 64 pixels the floorplan is noise, so the small sizes carry the mark alone."""
     background = f'<g clip-path="url(#tile)"><g transform="translate({inset} {inset}) scale({k})">{plan}{clearing}</g></g>' if detailed else ""
     return svg(
         f'<rect x="{inset}" y="{inset}" width="{tile}" height="{tile}" rx="{radius}" fill="url(#paper)" filter="url(#shadow)"/>'
         f'{background}'
-        f'<g transform="translate({inset} {inset}) scale({k})">{dot}{mu}{word if detailed else ""}</g>', defs)
+        f'<g transform="translate({inset} {inset}) scale({k})">{dot}{mu}</g>', defs)
 
 
 with tempfile.TemporaryDirectory() as tmp:
