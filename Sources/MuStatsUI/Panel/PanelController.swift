@@ -194,6 +194,14 @@ public final class PanelController: NSObject, NSWindowDelegate {
         layout?.request(module)
     }
 
+    /// The same toggle a row click performs, for `mustats://toggle/<module>`:
+    /// scripted driving goes through the identical staged transaction so what it
+    /// exercises is what a click exercises.
+    public func toggle(module: PanelModule, anchoredTo anchor: NSRect?, on screen: NSScreen?) {
+        if !isVisible { present(anchoredTo: anchor, on: screen, opensOnAlert: false) }
+        toggleModule(module)
+    }
+
     public func hide() {
         // Unconditional: a monitor must never outlive the state that installed it,
         // even if this is called on a path where the panel was already hidden.
@@ -283,6 +291,9 @@ public final class PanelController: NSObject, NSWindowDelegate {
         guard let window, isVisible else { return }
         lastAnchor = anchor
         lastScreen = screen ?? anchor.flatMap(Self.screen(containing:))
+        // Mid-transition the measured height is partway through the reveal;
+        // the finish-time position() applies this anchor with an honest measure.
+        guard !isDisclosureTransitionActive else { return }
         position(window, anchoredTo: anchor, on: lastScreen)
     }
 
@@ -362,8 +373,7 @@ public final class PanelController: NSObject, NSWindowDelegate {
             layout.collapsedModulesOverride = target
         }
         window.layoutIfNeeded()
-        let fitting = window.contentView?.fittingSize
-            ?? NSSize(width: PanelSettings.width, height: window.frame.height)
+        let fitting = stagedSize(of: window)
         let destination = targetFrame(for: fitting, anchoredTo: lastAnchor, on: lastScreen)
         WindowLog.log("disclosure \(module.rawValue) fitting=\(fitting) dest=\(destination) win=\(window.frame)")
 
@@ -477,8 +487,14 @@ public final class PanelController: NSObject, NSWindowDelegate {
         // height back to the destination one notification at a time. The
         // transaction is over when the frame has arrived; the deadline covers the
         // arrival that never comes.
-        let arrived = disclosureDestination.map { isNear(window.frame, $0) } ?? true
+        // The window can arrive while the reveal is still running: AppKit's
+        // animation lands within tolerance a beat before SwiftUI's, and an early
+        // finish here measured the hierarchy mid-reveal — a height partway
+        // through — and snapped the window to it, leaving the panel a stub of
+        // itself. The counter is the gate; the window's own arrivals only retry.
         let overdue = disclosureDeadline.map { Date() >= $0 } ?? false
+        guard disclosureAnimationsPending == 0 || overdue else { return }
+        let arrived = disclosureDestination.map { isNear(window.frame, $0) } ?? true
         guard arrived || overdue else {
             Task { @MainActor [weak self, weak window, weak layout] in
                 try? await Task.sleep(for: .milliseconds(80))
@@ -505,6 +521,38 @@ public final class PanelController: NSObject, NSWindowDelegate {
         WindowLog.log("disclosure finished win=\(window.frame)")
     }
 
+    /// The hierarchy's ideal size, read after a layout pass.
+    ///
+    /// This is the honest measure for a settled hierarchy — what `position`
+    /// needs once a disclosure has finished and the reveal has committed. It
+    /// must not pull SwiftUI's render tick forward itself; that is `stagedSize`'s
+    /// job, and only where its run-loop pass is safe.
+    private func idealSize(of window: NSWindow) -> NSSize {
+        window.layoutIfNeeded()
+        return window.contentView?.fittingSize
+            ?? NSSize(width: PanelSettings.width, height: window.frame.height)
+    }
+
+    /// The staged disclosure measure, taken while the final hierarchy is still
+    /// pending on SwiftUI's render tick.
+    ///
+    /// `fittingSize` answers from the last committed layout: the override just
+    /// written has not been rendered yet, and on macOS 15 `layoutIfNeeded`
+    /// alone does not pull that tick forward — the measure then returns the
+    /// height the window already had, the destination never grows, and the
+    /// reveal plays inside a frame too small to hold it. One pass of the run
+    /// loop services the pending commit before the size is read.
+    ///
+    /// The pass reenters the run loop, which UpdateCycle does not survive: a
+    /// nested iteration during its own flush crashes the process. Only
+    /// `toggleModule` may call this — it is reached from user events, key
+    /// tasks and URL opens, never from inside a render — while `position` and
+    /// `finishDisclosure` measure through `idealSize`, which never pumps.
+    private func stagedSize(of window: NSWindow) -> NSSize {
+        RunLoop.current.run(until: Date())
+        return idealSize(of: window)
+    }
+
     /// Anchor under the status item, nudged so the panel never hangs off the screen,
     /// slides under the menu bar, or grows past the bottom of the display.
     private func position(_ window: NSWindow, anchoredTo anchor: NSRect?, on screen: NSScreen?) {
@@ -512,9 +560,7 @@ public final class PanelController: NSObject, NSWindowDelegate {
         isPositioning = true
         defer { isPositioning = false }
 
-        window.layoutIfNeeded()
-        let fitting = window.contentView?.fittingSize
-            ?? NSSize(width: PanelSettings.width, height: 400)
+        let fitting = idealSize(of: window)
         // A layout measured mid-transaction can report an empty intrinsic size;
         // applied, it once teleported the panel to a zero-sized frame.
         guard fitting.width > 0, fitting.height > 0 else { return }

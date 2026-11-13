@@ -21,12 +21,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The app has no windows in the ordinary sense; never quit because the panel closed.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
-    /// A widget clicked: `mustats://open/<module>` opens the panel on that module.
+    /// `mustats://open/<module>` opens the panel on that module for a widget;
+    /// `mustats://toggle/<module>` performs the row-click toggle, for automation.
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
-            guard url.scheme == "mustats", url.host == "open",
+            guard url.scheme == "mustats",
                   let module = PanelModule(rawValue: url.lastPathComponent) else { continue }
-            coordinator?.openPanel(on: module)
+            switch url.host {
+            case "open": coordinator?.openPanel(on: module)
+            case "toggle": coordinator?.togglePanelModule(module)
+            default: continue
+            }
         }
     }
 

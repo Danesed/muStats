@@ -167,6 +167,15 @@ final class AppCoordinator {
 
     // MARK: Actions
 
+    /// Toggle `module` in the panel, as `mustats://toggle/<module>` asks —
+    /// the scripted twin of a row click, driving the same transaction.
+    func togglePanelModule(_ module: PanelModule) {
+        let anchor = statusItem.anchorRect
+        panelAnchor = anchor
+        panel.toggle(module: module, anchoredTo: anchor,
+                     on: statusItem.anchorScreen)
+    }
+
     /// Open the panel with `module` expanded, as a widget asks for.
     func openPanel(on module: PanelModule) {
         let anchor = statusItem.anchorRect
