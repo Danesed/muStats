@@ -6,6 +6,25 @@
         <description>μStats releases.</description>
         <language>en</language>
         <item>
+            <title>0.2.2</title>
+            <sparkle:version>6</sparkle:version>
+            <sparkle:shortVersionString>0.2.2</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <pubDate>Fri, 13 Nov 2026 15:43:57 +0000</pubDate>
+            <sparkle:fullReleaseNotesLink>https://github.com/Danesed/muStats/blob/main/CHANGELOG.md</sparkle:fullReleaseNotesLink>
+            <description sparkle:format="markdown">### New
+
+- `mustats://toggle/&lt;module&gt;` toggles a panel module the way a row click does, for automation.
+
+### Fixed
+
+- A module could open as a stub of the panel on macOS 15: the disclosure now measures the final hierarchy only after SwiftUI has committed it, and finishes when both animations have landed.
+- A crash when a module finished opening or collapsing inside SwiftUI's render pass: the closing measure no longer reenters the run loop.
+- Tested on an Intel Mac running macOS 15 Sequoia.
+</description>
+            <enclosure url="https://github.com/Danesed/muStats/releases/download/v0.2.2/muStats.dmg" sparkle:edSignature="0u+MtNlOtv8px91dBLO6/MgFaEUgQ8S4OLf6/ynQjH5T8Cl6qgbKF3bOKKG4jkK1HrrXhJBWsOjGD/xOa08EDg==" length="9602669" type="application/octet-stream" />
+        </item>
+        <item>
             <title>0.2.1</title>
             <sparkle:version>5</sparkle:version>
             <sparkle:shortVersionString>0.2.1</sparkle:shortVersionString>

@@ -4,6 +4,22 @@ Each release has up to three groups: New, Improved and Fixed. `Scripts/appcast.p
 this file, so the update window and this page always say the same thing. Keep the
 headings exactly as they are below.
 
+## 0.2.2
+
+### New
+
+- `mustats://toggle/<module>` toggles a panel module the way a row click does, for
+  automation.
+
+### Fixed
+
+- A module could open as a stub of the panel on macOS 15: the disclosure now
+  measures the final hierarchy only after SwiftUI has committed it, and finishes
+  when both animations have landed.
+- A crash when a module finished opening or collapsing inside SwiftUI's render
+  pass: the closing measure no longer reenters the run loop.
+- Tested on an Intel Mac running macOS 15 Sequoia.
+
 ## 0.2.1
 
 ### New
