@@ -83,6 +83,7 @@ struct TortureTests {
 /// the main actor starves every other main-actor test — including the ones that assert
 /// a settings change is delivered within half a second, which then fail for reasons
 /// that have nothing to do with settings.
+extension PanelWindowSuites {
 @MainActor
 @Suite("Torture: windows", .serialized)
 struct WindowTortureTests {
@@ -220,6 +221,7 @@ struct WindowTortureTests {
                 "\(controller.activeEventMonitorCount) monitors survived")
     }
 
+}
 }
 
 @Suite("Torture: formatting")

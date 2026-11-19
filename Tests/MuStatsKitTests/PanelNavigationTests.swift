@@ -3,6 +3,7 @@ import AppKit
 @testable import MuStatsKit
 @testable import MuStatsUI
 
+extension PanelWindowSuites {
 @MainActor
 @Suite("Panel navigation", .serialized)
 struct PanelNavigationTests {
@@ -108,4 +109,5 @@ struct PanelNavigationTests {
         }
         return nil
     }
+}
 }

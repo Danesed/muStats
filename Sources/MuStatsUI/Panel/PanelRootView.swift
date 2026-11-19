@@ -61,17 +61,8 @@ public struct PanelRootView: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let pending = updates?.pending {
-                PanelUpdateRow(update: pending, install: { [updates] in
-                    // Sparkle's window is a window, and the panel closes when it loses
-                    // key, so it would take the update with it on the way out.
-                    actions.dismiss()
-                    updates?.installPending()
-                }, skip: { [updates] in
-                    updates?.skipPending()
-                })
-                PanelSeparator()
-            }
+            // An update waiting is shown by a badge on the gear, and handled in
+            // Settings > About: the panel is for readings.
             PanelHeaderView(tab: tab, tabs: availableTabs, isStale: engine.isStale,
                             hasUpdate: updates?.pending != nil)
             if shownTab == .now, Self.showsStatusLine(settings.settings.panel.statusLine, level: insight.level,
@@ -458,77 +449,6 @@ struct PanelSeparator: View {
     }
 }
 
-/// The whole of what a scheduled update does to the app until the user asks for more.
-///
-/// It sits above the modules rather than in the footer because it is news and the footer
-/// is furniture, and it is one row rather than a banner because an update is not more
-/// important than the readings the user opened the panel to see.
-struct PanelUpdateRow: View {
-    let update: PendingUpdate
-    let install: @MainActor () -> Void
-    let skip: @MainActor () -> Void
-
-    /// A staged update wants a relaunch and nothing else, so the row says so instead
-    /// of promising an install it has already done.
-    private var headline: LocalizedStringKey {
-        update.isReadyToInstall ? "μStats \(update.version) is ready" : "μStats \(update.version) is available"
-    }
-
-    private var action: String { update.isReadyToInstall ? "Restart" : "Install" }
-
-    var body: some View {
-        HStack(spacing: Design.Space.s) {
-            Image(systemName: "arrow.down.circle.fill")
-                .font(Design.Text.label)
-                .foregroundStyle(Design.Palette.accent)
-            Text(headline)
-                .font(Design.Text.label)
-                .foregroundStyle(Design.Palette.primaryText)
-                .lineLimit(1)
-            Spacer(minLength: Design.Space.m)
-            PanelUpdateButton(title: "Skip", color: Design.Palette.secondaryText, action: skip)
-                .help("Skip this version. A newer one will still be offered.")
-                .accessibilityHint("Hides this version until a newer one is released")
-            PanelUpdateButton(title: action, color: Design.Palette.accent, action: install)
-                .accessibilityHint(update.isReadyToInstall ? "Relaunches μStats into the new version"
-                                                           : "Opens the updater to install it")
-        }
-        .padding(.horizontal, Design.Space.panelInset)
-        .padding(.vertical, Design.Space.m)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(headline)
-    }
-}
-
-/// A caption-sized text button for the update row, highlighted under the pointer.
-private struct PanelUpdateButton: View {
-    let title: String
-    let color: Color
-    let action: @MainActor () -> Void
-
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: action) {
-            Text(localizing: title)
-                .font(Design.Text.caption)
-                .foregroundStyle(color)
-                .padding(.horizontal, Design.Space.s)
-                .padding(.vertical, Design.Space.xs)
-                .background(
-                    RoundedRectangle(cornerRadius: Design.Radius.control, style: .continuous)
-                        .fill(isHovering ? Design.Palette.track : .clear)
-                )
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering in
-            withAnimation(Design.Motion.respectingAccessibility(Design.Motion.hover)) {
-                isHovering = hovering
-            }
-        }
-    }
-}
 
 /// The top of the panel: the Now/Today switch in the middle and Settings at the
 /// right. Quit and Activity Monitor live elsewhere (the status item's menu, and
@@ -549,15 +469,8 @@ struct PanelHeaderView: View {
     var body: some View {
         ZStack {
             if tabs.count > 1 {
-                Picker("View", selection: $tab) {
-                    ForEach(tabs, id: \.self) { tab in
-                        Text(localizing: tab.title).tag(tab)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .controlSize(.small)
-                .frame(width: CGFloat(tabs.count) * 80)
+                PanelTabSelector(selection: $tab, tabs: tabs)
+                    .frame(width: CGFloat(tabs.count) * 80)
             }
             HStack(spacing: Design.Space.xs) {
                 if isStale {
@@ -595,7 +508,7 @@ struct PanelHeaderView: View {
                         }
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PressableButtonStyle())
                 .keyboardShortcut(",", modifiers: .command)
                 .help(hasUpdate ? "Settings. An update is available." : "Settings")
                 .accessibilityLabel(hasUpdate ? "Settings, update available" : "Settings")
@@ -626,5 +539,53 @@ struct UpdateBadge: View {
             .frame(width: 11, height: 11)
             .background(Circle().fill(Color.blue))
             .accessibilityHidden(true)
+    }
+}
+
+/// Now, Today and Chip, as a segmented control drawn here rather than by AppKit.
+///
+/// The panel opens without becoming the key window, so it does not take focus from
+/// the app in front. AppKit draws a native segmented control in a window that is not
+/// key in its inactive grey, so the selection turned blue only on the first click
+/// inside the panel. This one takes the system accent colour as a fixed colour, the
+/// same on the first frame as on every other, and its selection slides to the
+/// segment picked.
+struct PanelTabSelector: View {
+    @Binding var selection: PanelTab
+    let tabs: [PanelTab]
+
+    @Namespace private var namespace
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(tabs, id: \.self) { tab in
+                let selected = tab == selection
+                Button {
+                    withAnimation(Design.Motion.respectingAccessibility(Design.Motion.selection)) {
+                        selection = tab
+                    }
+                } label: {
+                    Text(localizing: tab.title)
+                        .font(.system(size: 11, weight: selected ? .semibold : .medium))
+                        .foregroundStyle(selected ? Color.white : Design.Palette.primaryText)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, minHeight: 20)
+                        .background {
+                            if selected {
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(Color(nsColor: .controlAccentColor))
+                                    .matchedGeometryEffect(id: "selection", in: namespace)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(PressableButtonStyle())
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
+        .padding(2)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Design.Palette.track))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("View")
     }
 }

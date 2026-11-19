@@ -127,9 +127,10 @@ public enum Design {
     // MARK: - Shape
 
     public enum Radius {
-        /// Panel corners. 12 matches the curvature macOS gives menus and
-        /// Control Center popovers at this size.
-        public static let panel: CGFloat = 12
+        /// Panel corners. Concentric with the cards inside it: a card's radius
+        /// (`card` + 2) plus the 6 points between it and the panel's edge, so the two
+        /// curves run parallel instead of the inner one bulging toward the outer.
+        public static let panel: CGFloat = 16
         public static let card: CGFloat = 8
         public static let control: CGFloat = 6
         public static let bar: CGFloat = 2.5
@@ -140,8 +141,14 @@ public enum Design {
     /// Animation is used only where it carries meaning: a value changing, a module
     /// expanding. Never decoratively, and never long enough to make the app feel slow.
     public enum Motion {
+        /// The one curve for things arriving and changing state: a fast start and a
+        /// long, soft landing. Colour and opacity changes use it too, at a duration;
+        /// nothing in the panel bounces.
+        public static func settle(_ duration: TimeInterval) -> Animation {
+            .timingCurve(0.2, 0, 0, 1, duration: duration)
+        }
         /// Numeric readouts crossfading to a new value.
-        public static let value = Animation.easeOut(duration: 0.18)
+        public static let value = settle(0.18)
         /// A module revealing or hiding its detail while the panel follows its height.
         public static let disclosureDuration: TimeInterval = 0.18
         public static let disclosure = Animation.easeOut(duration: disclosureDuration)
@@ -149,9 +156,11 @@ public enum Design {
         public static let chartReveal = Animation.easeOut(duration: 0.12)
         ///
         /// Panel present/dismiss.
-        public static let present = Animation.easeOut(duration: 0.14)
+        public static let present = settle(0.14)
         /// Hover highlight.
-        public static let hover = Animation.easeOut(duration: 0.12)
+        public static let hover = settle(0.12)
+        /// A segment or tab moving to its new place.
+        public static let selection = Animation.spring(duration: 0.3, bounce: 0)
 
         /// Honours "Reduce Motion". Call this instead of using the constants directly
         /// anywhere a position or size changes.
@@ -435,6 +444,14 @@ public struct GlassSheen<S: InsettableShape>: View {
 public func glassWindowBackdrop(around content: NSView, cornerRadius: CGFloat) -> NSView {
     content.translatesAutoresizingMaskIntoConstraints = false
     if #available(macOS 26.0, *) {
+        // The glass sizes its own holder for the content, but not the content in it:
+        // with autoresizing off and no constraints, the panel's content kept the height
+        // it had when the window was set to a new size in one step, which happens when
+        // a section fills in after a module has opened ("Keeping the Mac awake" reads
+        // its list a beat later). The top of the panel slid out of view and the bottom
+        // stayed empty. Following its holder's size keeps the two the same.
+        content.translatesAutoresizingMaskIntoConstraints = true
+        content.autoresizingMask = [.width, .height]
         let glass = WindowGlassView()
         glass.style = .regular
         glass.cornerRadius = cornerRadius
@@ -588,5 +605,21 @@ extension Text {
     /// A string with no entry, a reading or a name, shows as it is.
     init(localizing key: String) {
         self.init(LocalizedStringKey(key))
+    }
+}
+
+/// A control that answers the press: it shrinks a little while held, over 150 ms.
+/// Buttons take 0.96; a full-width row takes less, since the same shrink on a wide
+/// row is a visible jump of its edges. The press stays under Reduce Motion: it is
+/// feedback, not travel.
+public struct PressableButtonStyle: ButtonStyle {
+    public var scale: CGFloat
+
+    public init(scale: CGFloat = 0.96) { self.scale = scale }
+
+    public func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? scale : 1)
+            .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
     }
 }

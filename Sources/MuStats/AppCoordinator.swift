@@ -207,9 +207,11 @@ final class AppCoordinator {
     /// Also the answer to a second launch: the app has no dock icon and no window of
     /// its own, so opening it from Spotlight or the Finder while it is already running
     /// used to do nothing at all, which is indistinguishable from the app being broken.
+    /// Settings, on About when an update is waiting: the gear's badge points there,
+    /// and About is where the update is installed or skipped.
     func showSettings() {
         panel.hide()
-        settingsWindow.show()
+        settingsWindow.show(on: updater.pending != nil ? .about : nil)
     }
 
     /// The panel hangs from the item, so it goes with it.

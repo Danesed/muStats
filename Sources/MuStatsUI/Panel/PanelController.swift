@@ -65,6 +65,9 @@ public final class PanelController: NSObject, NSWindowDelegate {
     /// reading is calm again: one refusal is an answer.
     private var autoOpenDeclined: PanelModule?
 
+    /// The app that was in front when the panel opened, to give the keyboard back to.
+    private var appBeforePanel: NSRunningApplication?
+
     private var releaseTask: Task<Void, Never>?
     private var memoryPressureSource: (any DispatchSourceMemoryPressure)?
 
@@ -118,21 +121,19 @@ public final class PanelController: NSObject, NSWindowDelegate {
         presentation &+= 1
 
         position(window, anchoredTo: anchor, on: lastScreen)
-        window.alphaValue = 0
-        // Ordering front "regardless" is what lets a menu bar app show a window while
-        // another app stays active; `makeKeyAndOrderFront` would activate μStats.
+        // On screen at once. The panel is opened many times a day, and an entrance
+        // replayed every time is a delay between the click and the numbers. Only the
+        // close fades.
+        window.alphaValue = 1
+        // The app in front, so the keyboard can go back to it when the panel closes.
+        if !NSApp.isActive { appBeforePanel = NSWorkspace.shared.frontmostApplication }
         window.orderFrontRegardless()
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = motionDuration
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            window.animator().alphaValue = 1
-        }
-        // Deliberately no `makeKey()`. Making a panel key programmatically activates
-        // μStats even when the panel is `.nonactivatingPanel` — measured, not assumed —
-        // and the frontmost app loses focus the instant the user glances at their CPU
-        // usage. The panel still *can* become key (`canBecomeKey` is true), so clicking
-        // a control inside it hands it the keyboard without activating the app, which
-        // is exactly what a non-activating panel is for.
+        // Key from the first frame. A panel that is not key is drawn in its inactive
+        // look, and on macOS 26 that includes the glass: the shading it takes from the
+        // menu bar appeared only on the first click inside. Becoming key activates
+        // μStats, so the app in front gives up the keyboard while the panel is open;
+        // `hide` hands it back.
+        window.makeKey()
         installDismissMonitors()
         isVisible = true
         layout?.isPanelVisible = true
@@ -210,6 +211,7 @@ public final class PanelController: NSObject, NSWindowDelegate {
         presentation &+= 1
         let generation = presentation
         isVisible = false
+        returnFocus()
         restoreAfterAutoOpen()
         lastHidden = Date()
         layout?.isPanelVisible = false
@@ -226,8 +228,9 @@ public final class PanelController: NSObject, NSWindowDelegate {
         layout?.focusedModule = nil
         layout?.disclosureOrigin = nil
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = motionDuration * 0.7
-            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            // Opacity only, so it stays under Reduce Motion as well.
+            context.duration = 0.1
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             window.animator().alphaValue = 0
         } completionHandler: { [weak self] in
             MainActor.assumeIsolated {
@@ -239,6 +242,27 @@ public final class PanelController: NSObject, NSWindowDelegate {
         }
         scheduleWindowRelease()
         WindowLog.log("panel hidden monitors=\(activeEventMonitorCount)")
+    }
+
+    /// Gives the keyboard back to the app that had it before the panel opened.
+    ///
+    /// Not when the panel closed because that app, or another, was clicked: it is
+    /// already in front. Not when the panel closed to open another μStats window,
+    /// such as Settings: that window is where the user is going. Not when the panel
+    /// has been opened again. Checked a turn later, so a window opened right after
+    /// `hide` is already on screen.
+    private func returnFocus() {
+        guard let previous = appBeforePanel else { return }
+        appBeforePanel = nil
+        DispatchQueue.main.async { [weak self] in
+            // Reopened in the meantime: the keyboard belongs to the panel again, and
+            // handing it away now would close the panel the user just opened.
+            guard self?.isVisible != true else { return }
+            guard NSApp.isActive, !previous.isTerminated else { return }
+            let otherWindow = NSApp.windows.contains { $0 !== self?.window && $0.isVisible && $0.level == .normal }
+            guard !otherWindow else { return }
+            previous.activate()
+        }
     }
 
     /// Throw away a long-hidden panel's window, and with it the SwiftUI view tree.
@@ -568,7 +592,24 @@ public final class PanelController: NSObject, NSWindowDelegate {
         let frame = targetFrame(for: fitting, anchoredTo: anchor, on: screen)
         guard frame != window.frame else { return }
         WindowLog.log("position \(window.frame) -> \(frame) fitting=\(fitting)")
-        window.setFrame(frame, display: true)
+        // On screen, a change of height is animated, the way a disclosure is. Set in
+        // one step, the window grew but SwiftUI kept laying its content out at the
+        // old height: when a section filled in after a module opened ("Keeping the
+        // Mac awake" reads its list a beat later) the top of the panel slid out of
+        // view and the bottom stayed empty. The animated path is the one the
+        // disclosure takes, and it keeps the two together. A small correction, or a
+        // window not yet shown, is still set at once.
+        let grows = abs(frame.height - window.frame.height) > 2
+        guard window.isVisible, grows, motionDuration > 0 else {
+            window.setFrame(frame, display: true)
+            return
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.2
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0, 0, 1)
+            context.allowsImplicitAnimation = true
+            window.animator().setFrame(frame, display: true)
+        }
     }
 
     private func targetFrame(for fitting: NSSize, anchoredTo anchor: NSRect?,

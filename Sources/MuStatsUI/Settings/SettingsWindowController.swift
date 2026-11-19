@@ -13,6 +13,7 @@ public final class SettingsWindowController: NSObject, NSWindowDelegate {
     /// grant the alerts actually depend on rather than a second opinion.
     private let authority: NotificationAuthority?
     private var window: NSWindow?
+    private var initialTab: SettingsTab?
 
     public init(engine: MetricsEngine, settings: SettingsStore,
                 updater: SoftwareUpdater? = nil,
@@ -24,7 +25,17 @@ public final class SettingsWindowController: NSObject, NSWindowDelegate {
         super.init()
     }
 
-    public func show() {
+    /// Opens the window, on `tab` when one is given. A window already open on
+    /// another pane is rebuilt on the one asked for.
+    public func show(on tab: SettingsTab? = nil) {
+        if let tab, let open = self.window {
+            open.delegate = nil
+            open.close()
+            self.window = nil
+            initialTab = tab
+        } else {
+            initialTab = tab
+        }
         let window = self.window ?? makeWindow()
         self.window = window
         // Two preferences are process state rather than stored values, so they take
@@ -52,7 +63,8 @@ public final class SettingsWindowController: NSObject, NSWindowDelegate {
         let window = NSWindow()
         let root = SettingsRootView(settings: settings, engine: engine,
                                     updater: updater,
-                                    authority: authority) { [weak window] tab in
+                                    authority: authority,
+                                    initialTab: initialTab) { [weak window] tab in
             window?.title = tab.label
         }
         window.delegate = self

@@ -33,7 +33,7 @@ struct AboutPane: View {
             .offset(y: 8)
             .scaleEffect(wearsMoustache ? 1 : 0.2, anchor: .center)
             .opacity(wearsMoustache ? 1 : 0)
-            .animation(.spring(response: 0.35, dampingFraction: 0.5), value: wearsMoustache)
+            .animation(Design.Motion.respectingAccessibility(.spring(duration: 0.35, bounce: 0)), value: wearsMoustache)
             .accessibilityHidden(true)
     }
 
@@ -55,6 +55,44 @@ struct AboutPane: View {
                 .padding(.vertical, Design.Space.xs)
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("μStats, \(versionText)")
+            }
+
+            // Every update control in one place, under the version it would replace:
+            // "is this up to date, and will it stay that way" is answered in one look.
+            Section {
+                // The answer to a check is drawn beside the button rather than in
+                // Sparkle's alert. Only an update opens a window, and only when the
+                // user asks to install it, because that window carries the release
+                // notes and the Install button.
+                HStack(spacing: Design.Space.l) {
+                    if let pending = updater?.pending {
+                        Button(pending.isReadyToInstall ? "Restart" : "Install…") {
+                            updater?.installPending()
+                        }
+                        .accessibilityHint(pending.isReadyToInstall
+                                           ? "Relaunches μStats into the new version"
+                                           : "Opens the updater to install it")
+                        Button("Skip This Version") { updater?.skipPending() }
+                            .help("Skip this version. A newer one will still be offered.")
+                    } else {
+                        Button("Check Now") { updater?.checkQuietly() }
+                            .disabled(updater?.canCheck != true)
+                            .accessibilityHint("Asks GitHub whether a newer version exists")
+                    }
+                    Spacer()
+                    updateStatus
+                }
+                // Stored by Sparkle rather than in the settings file, so this reads and
+                // writes the updater itself. Only the offscreen renderer has none.
+                Toggle("Check for updates automatically", isOn: checksAutomatically)
+                    .disabled(updater == nil)
+                // Sparkle offers the same choice the first time it installs something,
+                // and takes the answer as standing. Without this row the only way back
+                // is to wait for another release and refuse it there.
+                Toggle("Install updates automatically", isOn: installsAutomatically)
+                    .disabled(updater == nil || !(updater?.checksAutomatically ?? false))
+            } header: {
+                Text("Updates")
             }
 
             Section {
@@ -124,6 +162,68 @@ struct AboutPane: View {
         }
         .settingsFormStyle()
     }
+
+    private var checksAutomatically: Binding<Bool> {
+        Binding(get: { updater?.checksAutomatically ?? true },
+                set: { updater?.setChecksAutomatically($0) })
+    }
+
+    private var installsAutomatically: Binding<Bool> {
+        Binding(get: { updater?.installsAutomatically ?? false },
+                set: { updater?.setInstallsAutomatically($0) })
+    }
+
+    /// The state of updates, beside the button that changes it. It also answers "is
+    /// this thing actually running?": the automatic check is silent when it finds
+    /// nothing, so without the checked time a user who never pressed anything would see
+    /// no sign of it at all. A failure is named, because Sparkle stamps the check date
+    /// on failure too and a feed unreachable for a month would otherwise read as fine.
+    @ViewBuilder
+    private var updateStatus: some View {
+        if updater?.isChecking == true {
+            HStack(spacing: Design.Space.s) {
+                ProgressView().controlSize(.small)
+                Text("Checking…")
+            }
+            .foregroundStyle(.secondary)
+        } else if let failure = updater?.lastCheckFailure {
+            Text("Couldn't check")
+                .foregroundStyle(.secondary)
+                .help(failure)
+                .accessibilityValue(failure)
+        } else if updater?.pending != nil || updater?.lastCheck != nil {
+            VStack(alignment: .trailing, spacing: Design.Space.xxs) {
+                if let pending = updater?.pending {
+                    Text(pending.isReadyToInstall ? "μStats \(pending.version) is ready"
+                                                  : "μStats \(pending.version) is available")
+                } else {
+                    Text("Up to date")
+                }
+                if let checked = updater?.lastCheck {
+                    Text("Checked \(Self.checkedPhrase(checked))")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    /// A check that has just finished is stamped a moment after the `Date()` it is
+    /// drawn against, and the formatter reads that as "in 0 seconds".
+    private static func checkedPhrase(_ checked: Date) -> String {
+        let now = Date()
+        guard now.timeIntervalSince(checked) >= 60 else { return "just now" }
+        return relative.localizedString(for: checked, relativeTo: now)
+    }
+
+    private static let relative: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return formatter
+    }()
 
     /// The marketing version alone. The build number beside it is what Sparkle
     /// compares releases by and means nothing to the person reading it.

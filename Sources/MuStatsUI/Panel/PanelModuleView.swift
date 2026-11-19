@@ -206,7 +206,7 @@ struct PanelModuleView: View {
             .contentShape(Rectangle())
             .background(hoverHighlight)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableButtonStyle(scale: 0.985))
         .onHover { hovering in
             withAnimation(Design.Motion.respectingAccessibility(Design.Motion.hover)) {
                 isHovering = hovering
