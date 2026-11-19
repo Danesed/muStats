@@ -6,6 +6,25 @@
         <description>μStats releases.</description>
         <language>en</language>
         <item>
+            <title>0.2.3</title>
+            <sparkle:version>7</sparkle:version>
+            <sparkle:shortVersionString>0.2.3</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <pubDate>Thu, 19 Nov 2026 20:16:18 +0000</pubDate>
+            <sparkle:fullReleaseNotesLink>https://github.com/Danesed/muStats/blob/main/CHANGELOG.md</sparkle:fullReleaseNotesLink>
+            <description sparkle:format="markdown">### Improved
+
+- The panel opens as the active window, so its glass and the Now, Today and Chip selector are drawn in full from the first frame, and one click opens a module. The keyboard goes back to the app you were using when the panel closes.
+- Updates now live in Settings &gt; About, with Install and Skip This Version. The gear in the panel keeps its badge and opens About while an update is waiting.
+- The panel appears at once and fades only as it closes. Buttons and rows answer a press, and the panel's corners follow the cards inside it.
+
+### Fixed
+
+- Opening a module whose content arrives a moment later, such as System with "Keeping the Mac awake", no longer pushes the top of the panel out of view.
+</description>
+            <enclosure url="https://github.com/Danesed/muStats/releases/download/v0.2.3/muStats.dmg" sparkle:edSignature="4FMvEFTW6VA4+nLYNR+Ur7/pF3bpT2LqJwEXOd21uXOfrs0k96vbBb+JWz4AbbJIW0lwZM9AGTz5FeSfsaYeAw==" length="9601894" type="application/octet-stream" />
+        </item>
+        <item>
             <title>0.2.2</title>
             <sparkle:version>6</sparkle:version>
             <sparkle:shortVersionString>0.2.2</sparkle:shortVersionString>
