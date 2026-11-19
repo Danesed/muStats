@@ -4,6 +4,23 @@ Each release has up to three groups: New, Improved and Fixed. `Scripts/appcast.p
 this file, so the update window and this page always say the same thing. Keep the
 headings exactly as they are below.
 
+## 0.2.3
+
+### Improved
+
+- The panel opens as the active window, so its glass and the Now, Today and Chip
+  selector are drawn in full from the first frame, and one click opens a module. The
+  keyboard goes back to the app you were using when the panel closes.
+- Updates now live in Settings > About, with Install and Skip This Version. The gear in
+  the panel keeps its badge and opens About while an update is waiting.
+- The panel appears at once and fades only as it closes. Buttons and rows answer a
+  press, and the panel's corners follow the cards inside it.
+
+### Fixed
+
+- Opening a module whose content arrives a moment later, such as System with "Keeping
+  the Mac awake", no longer pushes the top of the panel out of view.
+
 ## 0.2.2
 
 ### New
